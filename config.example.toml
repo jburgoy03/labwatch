@@ -11,11 +11,16 @@ mounts = ["/", "/mnt/media"]
 host_secs = 5
 services_secs = 30
 vpn_secs = 60
+docker_secs = 15
 
 [vpn]
 gluetun_url = "http://192.168.1.10:8000"
 expected_ip = "203.0.113.7"
 api_key = "your-gluetun-api-key"
+
+[docker]
+# docker-socket-proxy, bound to localhost on the server
+url = "http://127.0.0.1:2375"
 
 [[services]]
 name = "Jellyfin"

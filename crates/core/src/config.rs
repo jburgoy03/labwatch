@@ -22,6 +22,9 @@ pub struct Config {
     /// `[vpn]` is truly optional: `None` turns the VPN check off.
     pub vpn: Option<VpnConfig>,
 
+    /// `[docker]` is optional too: `None` turns container checks off.
+    pub docker: Option<DockerConfig>,
+
     /// Each `[[services]]` block becomes one entry.
     #[serde(default)]
     pub services: Vec<ServiceConfig>,
@@ -64,6 +67,7 @@ pub struct IntervalConfig {
     pub host_secs: u64,
     pub services_secs: u64,
     pub vpn_secs: u64,
+    pub docker_secs: u64,
 }
 
 impl Default for IntervalConfig {
@@ -72,6 +76,7 @@ impl Default for IntervalConfig {
             host_secs: 5,
             services_secs: 30,
             vpn_secs: 60,
+            docker_secs: 15,
         }
     }
 }
@@ -88,6 +93,13 @@ pub struct VpnConfig {
 
     /// API key from Gluetun's auth config (`/gluetun/auth/config.toml`).
     pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DockerConfig {
+    /// The socket proxy, e.g. "http://127.0.0.1:2375".
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

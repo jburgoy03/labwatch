@@ -15,7 +15,9 @@ use axum::{
 };
 use clap::{Parser, Subcommand};
 use labwatch_core::{
-    collectors::{CPU_WARMUP, Collector, HostCollector, ServiceCollector, VpnCollector},
+    collectors::{
+        CPU_WARMUP, Collector, DockerCollector, HostCollector, ServiceCollector, VpnCollector,
+    },
     config::Config,
     scheduler,
     status::Section,
@@ -68,28 +70,30 @@ async fn snapshot(config: &Config, json: bool) -> Result<()> {
     // `Option<VpnConfig>` -> `Option<Result<VpnCollector>>` -> `Result<Option<VpnCollector>>`.
     // `transpose` flips the two so `?` can catch a construction error.
     let mut vpn = config.vpn.clone().map(VpnCollector::new).transpose()?;
+    let mut docker = config
+        .docker
+        .as_ref()
+        .map(DockerCollector::new)
+        .transpose()?;
 
     // `.await` here yields to the runtime instead of blocking the thread.
     tokio::time::sleep(CPU_WARMUP).await;
 
     let started = Instant::now();
 
-    // An async block is a future we can hand to `try_join!` like any other.
-    let vpn_section = async {
-        match vpn.as_mut() {
-            Some(vpn) => run(vpn).await.map(Some),
-            None => Ok(None),
-        }
-    };
-
     // Run all collectors at once; `try_join!` stops at the first error.
-    let (host_section, services_section, vpn_section) =
-        tokio::try_join!(run(&mut host), run(&mut services), vpn_section)?;
+    let (host_section, services_section, docker_section, vpn_section) = tokio::try_join!(
+        run(&mut host),
+        run(&mut services),
+        run_optional(docker.as_mut()),
+        run_optional(vpn.as_mut()),
+    )?;
 
     // stderr, so `--json` output on stdout stays valid JSON.
     eprintln!("collected in {} ms", started.elapsed().as_millis());
 
     let mut sections = vec![host_section, services_section];
+    sections.extend(docker_section);
     sections.extend(vpn_section);
 
     if json {
@@ -99,6 +103,14 @@ async fn snapshot(config: &Config, json: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Runs a collector only if it's configured.
+async fn run_optional(collector: Option<&mut impl Collector>) -> Result<Option<Section>> {
+    match collector {
+        Some(collector) => run(collector).await.map(Some),
+        None => Ok(None),
+    }
 }
 
 /// Runs any collector and wraps its checks in a `Section`.
@@ -122,28 +134,44 @@ async fn serve(config: &Config) -> Result<()> {
     let secs = Duration::from_secs;
     let intervals = &config.intervals;
 
-    let slot_count = if config.vpn.is_some() { 3 } else { 2 };
+    let slot_count = 2 + usize::from(config.docker.is_some()) + usize::from(config.vpn.is_some());
     let store: SharedStore = Arc::new(RwLock::new(Store::with_slots(slot_count)));
+
+    // A closure that hands out 0, 1, 2, ... It's `mut` because it changes
+    // the `slot` variable it captured (Rust calls this an `FnMut`).
+    let mut slot = 0;
+    let mut next_slot = || {
+        slot += 1;
+        slot - 1
+    };
 
     // Each `store.clone()` copies the Arc (a pointer + refcount bump),
     // not the data. Every task shares the same Store.
     scheduler::spawn(
         HostCollector::new(config.host.mounts.clone()),
         secs(intervals.host_secs),
-        0,
+        next_slot(),
         store.clone(),
     );
     scheduler::spawn(
         ServiceCollector::new(config.services.clone())?,
         secs(intervals.services_secs),
-        1,
+        next_slot(),
         store.clone(),
     );
+    if let Some(docker_config) = &config.docker {
+        scheduler::spawn(
+            DockerCollector::new(docker_config)?,
+            secs(intervals.docker_secs),
+            next_slot(),
+            store.clone(),
+        );
+    }
     if let Some(vpn_config) = &config.vpn {
         scheduler::spawn(
             VpnCollector::new(vpn_config.clone())?,
             secs(intervals.vpn_secs),
-            2,
+            next_slot(),
             store.clone(),
         );
     }
