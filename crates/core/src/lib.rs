@@ -1,5 +1,9 @@
 //! Core library for Labwatch: collectors, data models and storage.
 
+pub mod collectors;
+pub mod config;
+pub mod status;
+
 /// Returns the Labwatch version from Cargo.toml.
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

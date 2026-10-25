@@ -1,0 +1,33 @@
+# Copy this file to config.toml and fill in your own values.
+# config.toml is gitignored so your real IPs never reach GitHub.
+
+[server]
+bind = "0.0.0.0:3000"
+
+[host]
+mounts = ["/", "/mnt/media"]
+
+[vpn]
+gluetun_url = "http://192.168.1.10:8000"
+expected_ip = "203.0.113.7"
+
+[[services]]
+name = "Jellyfin"
+url = "http://192.168.1.10:8096/health"
+
+[[services]]
+name = "Radarr"
+url = "http://192.168.1.10:7878"
+
+[[services]]
+name = "Sonarr"
+url = "http://192.168.1.10:8989"
+
+[[services]]
+name = "Prowlarr"
+url = "http://192.168.1.10:9696"
+
+[[services]]
+name = "qBittorrent"
+url = "http://192.168.1.10:8080"
+timeout_secs = 10
