@@ -1,9 +1,14 @@
-use std::{path::PathBuf, time::Instant};
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use askama::Template;
 use axum::{
-    Router,
+    Json, Router,
+    extract::State,
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -12,7 +17,9 @@ use clap::{Parser, Subcommand};
 use labwatch_core::{
     collectors::{CPU_WARMUP, Collector, HostCollector, ServiceCollector, VpnCollector},
     config::Config,
+    scheduler,
     status::Section,
+    store::{SharedStore, Store},
 };
 
 /// Homelab status dashboard.
@@ -112,15 +119,66 @@ fn print_section(section: &Section) {
 }
 
 async fn serve(config: &Config) -> Result<()> {
-    let app = Router::new().route("/", get(index));
+    let secs = Duration::from_secs;
+    let intervals = &config.intervals;
+
+    let slot_count = if config.vpn.is_some() { 3 } else { 2 };
+    let store: SharedStore = Arc::new(RwLock::new(Store::with_slots(slot_count)));
+
+    // Each `store.clone()` copies the Arc (a pointer + refcount bump),
+    // not the data. Every task shares the same Store.
+    scheduler::spawn(
+        HostCollector::new(config.host.mounts.clone()),
+        secs(intervals.host_secs),
+        0,
+        store.clone(),
+    );
+    scheduler::spawn(
+        ServiceCollector::new(config.services.clone())?,
+        secs(intervals.services_secs),
+        1,
+        store.clone(),
+    );
+    if let Some(vpn_config) = &config.vpn {
+        scheduler::spawn(
+            VpnCollector::new(vpn_config.clone())?,
+            secs(intervals.vpn_secs),
+            2,
+            store.clone(),
+        );
+    }
+
+    let app = Router::new()
+        .route("/", get(index))
+        .route("/api/status", get(api_status))
+        .with_state(store);
 
     let listener = tokio::net::TcpListener::bind(&config.server.bind)
         .await
         .with_context(|| format!("failed to bind {}", config.server.bind))?;
 
     println!("Labwatch listening on http://{}", config.server.bind);
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    println!("Shut down cleanly");
     Ok(())
+}
+
+/// Resolves when Ctrl+C is pressed, which tells axum to stop accepting
+/// connections and finish in-flight requests.
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to listen for Ctrl+C");
+}
+
+/// `State(store)` is an axum extractor: axum hands this handler the store
+/// we registered with `.with_state(...)`, like constructor injection.
+async fn api_status(State(store): State<SharedStore>) -> Json<Vec<Section>> {
+    let sections = store.read().expect("store lock poisoned").sections();
+    Json(sections)
 }
 
 /// The home page. Askama checks `templates/index.html` against this

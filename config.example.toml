@@ -7,6 +7,11 @@ bind = "0.0.0.0:3000"
 [host]
 mounts = ["/", "/mnt/media"]
 
+[intervals]
+host_secs = 5
+services_secs = 30
+vpn_secs = 60
+
 [vpn]
 gluetun_url = "http://192.168.1.10:8000"
 expected_ip = "203.0.113.7"

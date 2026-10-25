@@ -16,6 +16,9 @@ pub struct Config {
     #[serde(default)]
     pub host: HostConfig,
 
+    #[serde(default)]
+    pub intervals: IntervalConfig,
+
     /// `[vpn]` is truly optional: `None` turns the VPN check off.
     pub vpn: Option<VpnConfig>,
 
@@ -50,6 +53,25 @@ impl Default for HostConfig {
     fn default() -> Self {
         Self {
             mounts: vec![PathBuf::from("/")],
+        }
+    }
+}
+
+/// How often each collector runs, in seconds.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct IntervalConfig {
+    pub host_secs: u64,
+    pub services_secs: u64,
+    pub vpn_secs: u64,
+}
+
+impl Default for IntervalConfig {
+    fn default() -> Self {
+        Self {
+            host_secs: 5,
+            services_secs: 30,
+            vpn_secs: 60,
         }
     }
 }
@@ -112,6 +134,7 @@ mod tests {
 
         assert_eq!(config.server.bind, "127.0.0.1:3000");
         assert_eq!(config.host.mounts, vec![PathBuf::from("/")]);
+        assert_eq!(config.intervals.services_secs, 30);
         assert!(config.vpn.is_none());
         assert!(config.services.is_empty());
     }
