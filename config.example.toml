@@ -7,6 +7,9 @@ bind = "0.0.0.0:3000"
 [host]
 mounts = ["/", "/mnt/media"]
 
+[storage]
+path = "labwatch.db"
+
 [intervals]
 host_secs = 5
 services_secs = 30

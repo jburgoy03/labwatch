@@ -42,7 +42,7 @@ impl HostCollector {
         self.system.refresh_cpu_usage();
         let usage = f64::from(self.system.global_cpu_usage());
         let status = Status::from_thresholds(usage, CPU_WARN, CPU_CRIT);
-        Check::new("CPU", status, format!("{usage:.1}% used"))
+        Check::new("CPU", status, format!("{usage:.1}% used")).with_value(usage)
     }
 
     fn memory_check(&mut self) -> Check {
@@ -64,6 +64,7 @@ impl HostCollector {
                 total / GIB
             ),
         )
+        .with_value(percent)
     }
 
     /// `None` when the machine has no temperature sensors (common on
@@ -86,6 +87,7 @@ impl HostCollector {
                 Status::from_thresholds(t, TEMP_WARN, TEMP_CRIT),
                 format!("hottest sensor {t:.0} °C"),
             )
+            .with_value(t)
         })
     }
 
@@ -118,6 +120,7 @@ impl HostCollector {
                     Status::from_thresholds(used_percent, DISK_WARN, DISK_CRIT),
                     format!("{used_percent:.1}% used ({:.0} GiB free)", free / GIB),
                 )
+                .with_value(used_percent)
             })
             .collect()
     }

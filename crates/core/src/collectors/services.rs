@@ -40,9 +40,11 @@ async fn check(client: Client, service: ServiceConfig) -> Check {
         .send()
         .await;
 
+    let elapsed_ms = started.elapsed().as_millis();
+
     // `match` with guards (`if ...`) picks the first arm that fits.
-    let (status, detail) = match result {
-        Ok(response) => classify(response.status(), started.elapsed().as_millis()),
+    let (status, detail) = match &result {
+        Ok(response) => classify(response.status(), elapsed_ms),
         Err(err) if err.is_timeout() => (
             Status::Critical,
             format!("timed out after {}s", service.timeout_secs),
@@ -51,7 +53,14 @@ async fn check(client: Client, service: ServiceConfig) -> Check {
         Err(err) => (Status::Critical, err.to_string()),
     };
 
-    Check::new(service.name, status, detail)
+    let check = Check::new(service.name, status, detail);
+
+    // Only a real response has a meaningful response time to chart.
+    if result.is_ok() {
+        check.with_value(elapsed_ms as f64)
+    } else {
+        check
+    }
 }
 
 /// Turns an HTTP response into a status. Pulled out of `check` so it can

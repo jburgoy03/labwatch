@@ -19,6 +19,9 @@ pub struct Config {
     #[serde(default)]
     pub intervals: IntervalConfig,
 
+    #[serde(default)]
+    pub storage: StorageConfig,
+
     /// `[vpn]` is truly optional: `None` turns the VPN check off.
     pub vpn: Option<VpnConfig>,
 
@@ -56,6 +59,21 @@ impl Default for HostConfig {
     fn default() -> Self {
         Self {
             mounts: vec![PathBuf::from("/")],
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StorageConfig {
+    /// SQLite database file for history. Created if it doesn't exist.
+    pub path: PathBuf,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            path: PathBuf::from("labwatch.db"),
         }
     }
 }

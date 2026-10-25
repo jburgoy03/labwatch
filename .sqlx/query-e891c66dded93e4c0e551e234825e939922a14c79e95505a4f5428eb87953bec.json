@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT hour, worst_status, avg_value FROM hourly\n                     WHERE collector = ? AND check_name = ? AND hour >= ?\n                     ORDER BY hour",
+  "describe": {
+    "columns": [
+      {
+        "name": "hour",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "hourly",
+            "name": "hour"
+          }
+        }
+      },
+      {
+        "name": "worst_status",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "hourly",
+            "name": "worst_status"
+          }
+        }
+      },
+      {
+        "name": "avg_value",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "hourly",
+            "name": "avg_value"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e891c66dded93e4c0e551e234825e939922a14c79e95505a4f5428eb87953bec"
+}

@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT ts, status, value FROM samples\n                     WHERE collector = ? AND check_name = ? AND ts >= ?\n                     ORDER BY ts",
+  "describe": {
+    "columns": [
+      {
+        "name": "ts",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "samples",
+            "name": "ts"
+          }
+        }
+      },
+      {
+        "name": "status",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "samples",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "name": "value",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "samples",
+            "name": "value"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "b087eab7a22bec5eac934186fb30e489d209b36017ffc49243520cf24943b247"
+}

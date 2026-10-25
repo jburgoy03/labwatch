@@ -7,6 +7,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # No database in CI: sqlx's query! macros read the saved query
+  # metadata in .sqlx/ instead. If you change any SQL, regenerate it with
+  # `cargo sqlx prepare --workspace`; a stale .sqlx fails the build here.
+  SQLX_OFFLINE: "true"
 
 jobs:
   check:

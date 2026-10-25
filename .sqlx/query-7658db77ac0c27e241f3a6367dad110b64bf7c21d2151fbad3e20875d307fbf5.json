@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO samples (ts, collector, check_name, status, value)\n                 VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "7658db77ac0c27e241f3a6367dad110b64bf7c21d2151fbad3e20875d307fbf5"
+}

@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use askama::Template;
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -19,11 +19,21 @@ use labwatch_core::{
         CPU_WARMUP, Collector, DockerCollector, HostCollector, ServiceCollector, VpnCollector,
     },
     config::Config,
+    history::{History, Point, Range, unix_now},
     hub::Hub,
     scheduler,
     status::{Section, Status},
 };
+use serde::Deserialize;
 use tokio::sync::broadcast::error::RecvError;
+
+/// Everything the HTTP handlers need. axum gives each handler a clone,
+/// which is cheap because both fields are handles to shared data.
+#[derive(Clone)]
+struct AppState {
+    hub: Hub,
+    history: History,
+}
 
 /// Homelab status dashboard.
 ///
@@ -137,9 +147,12 @@ async fn serve(config: &Config) -> Result<()> {
 
     let slot_count = 2 + usize::from(config.docker.is_some()) + usize::from(config.vpn.is_some());
     let hub = Hub::new(slot_count);
+    let history = History::open(&config.storage.path).await?;
 
-    // Subscribe before starting collectors so the logger sees their first run.
+    // Subscribe before starting collectors so these see the first run.
     tokio::spawn(log_changes(hub.clone()));
+    tokio::spawn(record_history(hub.clone(), history.clone()));
+    tokio::spawn(rollup_every_hour(history.clone()));
 
     // A closure that hands out 0, 1, 2, ... It's `mut` because it changes
     // the `slot` variable it captured (Rust calls this an `FnMut`).
@@ -183,7 +196,8 @@ async fn serve(config: &Config) -> Result<()> {
     let app = Router::new()
         .route("/", get(index))
         .route("/api/status", get(api_status))
-        .with_state(hub);
+        .route("/api/history", get(api_history))
+        .with_state(AppState { hub, history });
 
     let listener = tokio::net::TcpListener::bind(&config.server.bind)
         .await
@@ -206,10 +220,65 @@ async fn shutdown_signal() {
         .expect("failed to listen for Ctrl+C");
 }
 
-/// `State(hub)` is an axum extractor: axum hands this handler the hub
+/// `State(state)` is an axum extractor: axum hands this handler the state
 /// we registered with `.with_state(...)`, like constructor injection.
-async fn api_status(State(hub): State<Hub>) -> Json<Vec<Section>> {
-    Json(hub.sections())
+async fn api_status(State(state): State<AppState>) -> Json<Vec<Section>> {
+    Json(state.hub.sections())
+}
+
+/// Query string for `/api/history?collector=host&check=CPU&range=24h`.
+/// `range` is optional and defaults to 24h.
+#[derive(Deserialize)]
+struct HistoryQuery {
+    collector: String,
+    check: String,
+    #[serde(default)]
+    range: Range,
+}
+
+async fn api_history(
+    State(state): State<AppState>,
+    Query(query): Query<HistoryQuery>,
+) -> Result<Json<Vec<Point>>, (StatusCode, String)> {
+    state
+        .history
+        .series(&query.collector, &query.check, query.range, unix_now())
+        .await
+        .map(Json)
+        // Turn a database error into a 500 response instead of a panic.
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")))
+}
+
+/// Saves every published section to the database.
+async fn record_history(hub: Hub, history: History) {
+    let mut updates = hub.subscribe();
+
+    loop {
+        match updates.recv().await {
+            Ok(section) => {
+                if let Err(err) = history.record(unix_now(), &section).await {
+                    eprintln!("failed to record {}: {err:#}", section.collector);
+                }
+            }
+            Err(RecvError::Lagged(skipped)) => {
+                eprintln!("history skipped {skipped} updates");
+            }
+            Err(RecvError::Closed) => break,
+        }
+    }
+}
+
+/// Rolls samples up into hourly averages and prunes old data, once an hour.
+async fn rollup_every_hour(history: History) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(60 * 60));
+
+    loop {
+        // The first tick fires immediately, so a restart catches up right away.
+        ticker.tick().await;
+        if let Err(err) = history.rollup(unix_now()).await {
+            eprintln!("history rollup failed: {err:#}");
+        }
+    }
 }
 
 /// Subscribes to the hub and prints a line whenever a collector's overall

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO hourly\n                 (hour, collector, check_name, worst_status,\n                  avg_value, min_value, max_value, sample_count)\n             SELECT ts - ts % 3600, collector, check_name, MAX(status),\n                    AVG(value), MIN(value), MAX(value), COUNT(*)\n             FROM samples\n             WHERE ts >= ? AND ts < ?\n             GROUP BY ts - ts % 3600, collector, check_name\n             ON CONFLICT (collector, check_name, hour) DO UPDATE SET\n                 worst_status = excluded.worst_status,\n                 avg_value    = excluded.avg_value,\n                 min_value    = excluded.min_value,\n                 max_value    = excluded.max_value,\n                 sample_count = excluded.sample_count",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d7257df8fea809a3b85a4ee94e7f8b2915bff524d59b418fe8c71574fc3ffab2"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM samples WHERE ts < ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "a16817c0e87dd8e219fc3963f793b137c5a23763570614d15b73c161d103b966"
+}

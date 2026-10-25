@@ -20,6 +20,22 @@ pub enum Status {
 }
 
 impl Status {
+    /// The status as a number for the database: 0 ok, 1 unknown, 2 warning,
+    /// 3 critical. `as i64` uses each variant's position in the enum.
+    pub fn rank(self) -> i64 {
+        self as i64
+    }
+
+    /// The reverse of `rank`. Anything unexpected becomes `Unknown`.
+    pub fn from_rank(rank: i64) -> Self {
+        match rank {
+            0 => Status::Ok,
+            2 => Status::Warning,
+            3 => Status::Critical,
+            _ => Status::Unknown,
+        }
+    }
+
     /// Grades a value against warning and critical thresholds.
     pub fn from_thresholds(value: f64, warn: f64, crit: f64) -> Self {
         if value >= crit {
@@ -52,6 +68,11 @@ pub struct Check {
     pub name: String,
     pub status: Status,
     pub detail: String,
+    /// The number behind the check, for charts: CPU percent, response ms...
+    /// Checks with nothing to graph (a container's state) leave it `None`,
+    /// and it's left out of the JSON entirely.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
 }
 
 impl Check {
@@ -60,7 +81,15 @@ impl Check {
             name: name.into(),
             status,
             detail: detail.into(),
+            value: None,
         }
+    }
+
+    /// Builder-style setter: `Check::new(...).with_value(6.3)`.
+    /// Takes `self` by value and returns it, so calls chain.
+    pub fn with_value(mut self, value: f64) -> Self {
+        self.value = Some(value);
+        self
     }
 }
 
@@ -108,11 +137,32 @@ mod tests {
     }
 
     #[test]
+    fn value_is_omitted_from_json_when_none() {
+        let plain = serde_json::to_string(&Check::new("a", Status::Ok, "")).unwrap();
+        assert!(!plain.contains("value"));
+
+        let with = serde_json::to_string(&Check::new("a", Status::Ok, "").with_value(6.5)).unwrap();
+        assert!(with.contains("\"value\":6.5"));
+    }
+
+    #[test]
     fn status_serializes_lowercase() {
         assert_eq!(
             serde_json::to_string(&Status::Warning).unwrap(),
             "\"warning\""
         );
+    }
+
+    #[test]
+    fn rank_round_trips() {
+        for status in [
+            Status::Ok,
+            Status::Unknown,
+            Status::Warning,
+            Status::Critical,
+        ] {
+            assert_eq!(Status::from_rank(status.rank()), status);
+        }
     }
 
     #[test]
