@@ -1,0 +1,41 @@
+<article class="station" id="station-{{ station.id }}" data-collector="{{ station.id }}"
+         data-status="{{ station.section.status.as_str() }}"
+         sse-swap="{{ station.id }}" hx-swap="outerHTML">
+  <header class="station-head">
+    <h2>{{ station.title }}</h2>
+    <span class="light" role="img" aria-label="{{ station.section.status }}"></span>
+  </header>
+
+  {% if station.section.checks.is_empty() %}
+    <p class="station-waiting">Waiting for the first reading</p>
+
+  {% else if let Some(feature) = station.feature %}
+    <div class="feature">
+      <p class="feature-label">Traffic leaves home through</p>
+      <p class="feature-value">{{ feature.value }}</p>
+      {% if !feature.caption.is_empty() %}
+        <p class="feature-caption">{{ feature.caption }}</p>
+      {% endif %}
+    </div>
+
+  {% else %}
+    <ul class="readings">
+      {% for check in station.section.checks %}
+        <li class="reading" data-status="{{ check.status.as_str() }}">
+          <span class="light"></span>
+          <span class="reading-name">{{ check.name }}</span>
+          <span class="reading-detail">{{ check.detail }}</span>
+          {% if station.id == "host" %}
+            {% if let Some(value) = check.value %}
+              {% if check.name != "Temperature" %}
+                <span class="meter" aria-hidden="true">
+                  <span class="meter-fill" style="width: {{ "{:.1}"|format(value) }}%"></span>
+                </span>
+              {% endif %}
+            {% endif %}
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</article>

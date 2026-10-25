@@ -1,0 +1,289 @@
+/* Labwatch: a base-station panel for the house.
+   The status lights are the only saturated colour on the page. */
+
+:root {
+  --night: #0f1c2b;
+  --panel: #142335;
+  --ink: #e6edf2;
+  --dim: #8ca0b3;
+  --track: #22354a;
+
+  --ok: #5bc48a;
+  --warning: #e8b04b;
+  --critical: #ef6461;
+  --unknown: #7d8b99;
+
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --text: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+
+  --edge: clamp(1rem, 2.5vw, 2.5rem);
+  --gap: clamp(0.75rem, 1.2vw, 1.25rem);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--night);
+  color: var(--ink);
+  font: 400 1rem/1.5 var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+a { color: inherit; text-decoration: none; }
+a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 4px; }
+
+.board {
+  min-height: 100vh;
+  padding: var(--edge);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* Status colour comes from the nearest [data-status]. */
+[data-status="ok"]       { --signal: var(--ok); }
+[data-status="warning"]  { --signal: var(--warning); }
+[data-status="critical"] { --signal: var(--critical); }
+[data-status="unknown"]  { --signal: var(--unknown); }
+
+.light {
+  display: inline-block;
+  flex: none;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+/* ---- Base status bar: the one loud thing on the page ---- */
+
+.base {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.5rem 0 1.25rem;
+}
+
+.beacon {
+  flex: none;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: var(--signal);
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--signal) 15%, transparent);
+}
+
+.base[data-status="critical"] .beacon { animation: beacon 1.6s ease-in-out infinite; }
+
+@keyframes beacon {
+  50% { box-shadow: 0 0 0 20px color-mix(in srgb, var(--signal) 5%, transparent); }
+}
+
+.base-text { min-width: 0; }
+
+.base-text p { margin: 0; }
+
+.base-name {
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+.base-headline {
+  margin: 0.1rem 0 0;
+  font: 600 clamp(1.9rem, 3.4vw, 3.25rem)/1.05 var(--display);
+  letter-spacing: 0.01em;
+}
+
+.base-text .base-detail {
+  margin-top: 0.35rem;
+  color: var(--dim);
+}
+
+.base-stations {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem 1.5rem;
+  margin: 0 0 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.base-stations a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--dim);
+}
+
+.base-stations a:hover { color: var(--ink); }
+
+/* ---- Stations ---- */
+
+.stations {
+  flex: 1;
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas:
+    "host services containers containers"
+    "vpn  services containers containers";
+  grid-auto-rows: auto;
+  align-content: start;
+}
+
+.station {
+  padding: 1.25rem 1.5rem 1.4rem;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+.station[data-collector="host"]       { grid-area: host; }
+.station[data-collector="services"]   { grid-area: services; }
+.station[data-collector="containers"] { grid-area: containers; }
+.station[data-collector="vpn"]        { grid-area: vpn; }
+
+.station-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.9rem;
+}
+
+.station-head h2 {
+  margin: 0;
+  font: 600 1.15rem/1.2 var(--display);
+}
+
+.station-waiting {
+  margin: 0;
+  color: var(--dim);
+}
+
+.readings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  padding: 0.4rem 0;
+}
+
+.reading-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reading-detail {
+  color: var(--dim);
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+/* Problems get their detail in full colour so they read at a glance. */
+.reading[data-status="warning"] .reading-detail,
+.reading[data-status="critical"] .reading-detail { color: var(--signal); }
+
+/* Containers are many and short: two columns. */
+.station[data-collector="containers"] .readings {
+  column-count: 2;
+  column-gap: 2.5rem;
+}
+
+.station[data-collector="containers"] .reading { break-inside: avoid; }
+
+/* ---- Server gauges: a thin bar under each percentage reading ---- */
+
+.station[data-collector="host"] .reading {
+  row-gap: 0.45rem;
+  padding: 0.55rem 0;
+}
+
+.meter {
+  grid-column: 2 / -1;
+  height: 0.3rem;
+  overflow: hidden;
+  background: var(--track);
+  border-radius: 999px;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  max-width: 100%;
+  background: var(--signal);
+  border-radius: inherit;
+}
+
+/* ---- Feature readout: one big fact, e.g. the VPN exit IP ---- */
+
+.feature p { margin: 0; }
+
+.feature-label {
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+.feature .feature-value {
+  margin-top: 0.3rem;
+  font: 600 clamp(1.5rem, 2.4vw, 2.2rem)/1.15 var(--display);
+  overflow-wrap: anywhere;
+}
+
+.station[data-status="warning"] .feature-value,
+.station[data-status="critical"] .feature-value { color: var(--signal); }
+
+.feature .feature-caption {
+  margin-top: 0.3rem;
+  color: var(--dim);
+}
+
+.board-foot {
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+
+/* ---- Medium screens: two columns ---- */
+
+@media (max-width: 90rem) {
+  .stations {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "host       services"
+      "vpn        services"
+      "containers containers";
+  }
+}
+
+/* ---- Small screens: one column, banner stacks ---- */
+
+@media (max-width: 48rem) {
+  .base { flex-wrap: wrap; }
+
+  .base-stations {
+    justify-content: flex-start;
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .stations {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: none;
+  }
+
+  .station[data-collector] { grid-area: auto; }
+
+  .station[data-collector="containers"] .readings { column-count: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .base[data-status="critical"] .beacon { animation: none; }
+}

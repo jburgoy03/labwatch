@@ -1,16 +1,15 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Labwatch</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-</head>
-<body>
-  <main class="container">
-    <h1>Labwatch</h1>
-    <p>Homelab status dashboard, coming soon.</p>
-    <small>v{{ version }}</small>
-  </main>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block content %}
+<main class="board" hx-ext="sse" sse-connect="/events">
+  {{ banner|safe }}
+
+  <div class="stations">
+    {% for station in stations %}
+      {% include "station.html" %}
+    {% endfor %}
+  </div>
+
+  <footer class="board-foot">Labwatch {{ version }}</footer>
+</main>
+{% endblock %}

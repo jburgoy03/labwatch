@@ -24,6 +24,12 @@ const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 /// `collect`, so the CPU reading has two samples far enough apart.
 pub const CPU_WARMUP: Duration = sysinfo::MINIMUM_CPU_UPDATE_INTERVAL;
 
+/// This machine's network name, e.g. "jaredburgoyne". Falls back to
+/// "this machine" if the OS won't say.
+pub fn host_name() -> String {
+    System::host_name().unwrap_or_else(|| "this machine".to_string())
+}
+
 pub struct HostCollector {
     system: System,
     mounts: Vec<PathBuf>,

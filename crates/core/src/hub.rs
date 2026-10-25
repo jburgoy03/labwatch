@@ -29,12 +29,14 @@ pub struct Hub {
 }
 
 impl Hub {
-    pub fn new(slots: usize) -> Self {
+    /// `collectors` are the collector names in display order; each gets a
+    /// pending placeholder until its first result arrives.
+    pub fn new(collectors: Vec<String>) -> Self {
         // `channel` returns a sender and a first receiver. We drop the
         // receiver (`_`): subscribers make their own with `subscribe()`.
         let (updates, _) = broadcast::channel(CHANNEL_CAPACITY);
         Self {
-            store: Arc::new(RwLock::new(Store::with_slots(slots))),
+            store: Arc::new(RwLock::new(Store::new(collectors))),
             updates,
         }
     }
@@ -67,16 +69,25 @@ impl Hub {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::status::{Check, Status};
+
+    fn hub() -> Hub {
+        Hub::new(vec!["host".into()])
+    }
+
+    fn host_section() -> Section {
+        Section::new("host", vec![Check::new("CPU", Status::Ok, "")])
+    }
 
     #[test]
     fn publish_updates_store_and_notifies_subscribers() {
-        let hub = Hub::new(1);
+        let hub = hub();
         let mut first = hub.subscribe();
         let mut second = hub.subscribe();
 
-        hub.publish(0, Section::new("host", vec![]));
+        hub.publish(0, host_section());
 
-        assert_eq!(hub.sections().len(), 1);
+        assert_eq!(hub.sections()[0].checks.len(), 1);
         // Every subscriber gets its own copy.
         assert_eq!(first.try_recv().unwrap().collector, "host");
         assert_eq!(second.try_recv().unwrap().collector, "host");
@@ -84,15 +95,15 @@ mod tests {
 
     #[test]
     fn publish_without_subscribers_still_updates_store() {
-        let hub = Hub::new(1);
-        hub.publish(0, Section::new("host", vec![]));
-        assert_eq!(hub.sections().len(), 1);
+        let hub = hub();
+        hub.publish(0, host_section());
+        assert_eq!(hub.sections()[0].status, Status::Ok);
     }
 
     #[test]
     fn late_subscriber_misses_earlier_updates() {
-        let hub = Hub::new(1);
-        hub.publish(0, Section::new("early", vec![]));
+        let hub = hub();
+        hub.publish(0, host_section());
 
         let mut late = hub.subscribe();
         assert!(late.try_recv().is_err());

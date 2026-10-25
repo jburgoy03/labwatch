@@ -1,3 +1,5 @@
+mod dashboard;
+
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -6,15 +8,11 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use askama::Template;
 use axum::{
     Json, Router,
     extract::{Query, State},
     http::StatusCode,
-    response::{
-        Html, IntoResponse, Response,
-        sse::{Event, KeepAlive, Sse},
-    },
+    response::sse::{Event, KeepAlive, Sse},
     routing::get,
 };
 use clap::{Parser, Subcommand};
@@ -155,57 +153,49 @@ async fn serve(config: &Config) -> Result<()> {
     let secs = Duration::from_secs;
     let intervals = &config.intervals;
 
-    let slot_count = 2 + usize::from(config.docker.is_some()) + usize::from(config.vpn.is_some());
-    let hub = Hub::new(slot_count);
     let history = History::open(&config.storage.path).await?;
     let shutdown = CancellationToken::new();
+
+    // Build the collectors first so the hub can be told their names up
+    // front. Each gets a placeholder card until its first run finishes.
+    let host = HostCollector::new(config.host.mounts.clone());
+    let services = ServiceCollector::new(config.services.clone())?;
+    let docker = config
+        .docker
+        .as_ref()
+        .map(DockerCollector::new)
+        .transpose()?;
+    let vpn = config.vpn.clone().map(VpnCollector::new).transpose()?;
+
+    let mut names = vec![host.name().to_string(), services.name().to_string()];
+    names.extend(docker.as_ref().map(|c| c.name().to_string()));
+    names.extend(vpn.as_ref().map(|c| c.name().to_string()));
+    let hub = Hub::new(names);
 
     // Subscribe before starting collectors so these see the first run.
     tokio::spawn(log_changes(hub.clone()));
     tokio::spawn(record_history(hub.clone(), history.clone()));
     tokio::spawn(rollup_every_hour(history.clone()));
 
-    // A closure that hands out 0, 1, 2, ... It's `mut` because it changes
-    // the `slot` variable it captured (Rust calls this an `FnMut`).
-    let mut slot = 0;
-    let mut next_slot = || {
-        slot += 1;
-        slot - 1
-    };
-
+    // Slots follow the same order as `names` above.
     // Each `hub.clone()` copies two handles (an Arc and a channel sender),
     // not the data. Every task shares the same store and channel.
-    scheduler::spawn(
-        HostCollector::new(config.host.mounts.clone()),
-        secs(intervals.host_secs),
-        next_slot(),
-        hub.clone(),
-    );
-    scheduler::spawn(
-        ServiceCollector::new(config.services.clone())?,
-        secs(intervals.services_secs),
-        next_slot(),
-        hub.clone(),
-    );
-    if let Some(docker_config) = &config.docker {
-        scheduler::spawn(
-            DockerCollector::new(docker_config)?,
-            secs(intervals.docker_secs),
-            next_slot(),
-            hub.clone(),
-        );
+    scheduler::spawn(host, secs(intervals.host_secs), 0, hub.clone());
+    scheduler::spawn(services, secs(intervals.services_secs), 1, hub.clone());
+
+    let mut next_slot = 2;
+    if let Some(docker) = docker {
+        scheduler::spawn(docker, secs(intervals.docker_secs), next_slot, hub.clone());
+        next_slot += 1;
     }
-    if let Some(vpn_config) = &config.vpn {
-        scheduler::spawn(
-            VpnCollector::new(vpn_config.clone())?,
-            secs(intervals.vpn_secs),
-            next_slot(),
-            hub.clone(),
-        );
+    if let Some(vpn) = vpn {
+        scheduler::spawn(vpn, secs(intervals.vpn_secs), next_slot, hub.clone());
     }
 
     let app = Router::new()
-        .route("/", get(index))
+        .route("/", get(dashboard::index))
+        .route("/events", get(dashboard::events))
+        .route("/static/app.css", get(dashboard::stylesheet))
         .route("/api/status", get(api_status))
         .route("/api/history", get(api_history))
         .route("/api/events", get(api_events))
@@ -267,31 +257,39 @@ async fn api_history(
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")))
 }
 
-/// Server-Sent Events: the current sections right away, then each new one
-/// as collectors publish it. The browser listens with `EventSource`.
+/// Every collector's current section, then each new one as it's
+/// published, ending when the server shuts down. Shared by the JSON and
+/// HTML event streams.
 ///
-/// The return type `impl Stream<...>` says "some stream of events" without
-/// naming the long, generated type that the combinators below build up.
-async fn api_events(
-    State(state): State<AppState>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+/// Takes `AppState` by value: the returned stream lives as long as the
+/// connection, so it must own what it uses rather than borrow it.
+pub(crate) fn section_stream(state: AppState) -> impl Stream<Item = Section> {
     // Subscribe before taking the snapshot, so nothing published in
     // between can slip through the gap.
     let updates = BroadcastStream::new(state.hub.subscribe())
         // A `Lagged` error just means we skipped some old updates; drop it.
         .filter_map(|message| future::ready(message.ok()));
 
-    let snapshot = stream::iter(state.hub.sections());
-
-    let events = snapshot
+    stream::iter(state.hub.sections())
         .chain(updates)
+        // End the stream when shutdown starts.
+        .take_until(state.shutdown.cancelled_owned())
+}
+
+/// Server-Sent Events as JSON, for API clients. The browser listens with
+/// `EventSource`.
+///
+/// The return type `impl Stream<...>` says "some stream of events" without
+/// naming the long, generated type that the combinators build up.
+async fn api_events(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let events = section_stream(state)
         .filter_map(|section| {
             future::ready(Event::default().event("section").json_data(&section).ok())
         })
         // SSE streams carry `Result`s; ours can't fail, hence `Infallible`.
-        .map(Ok::<_, Infallible>)
-        // End the stream when shutdown starts.
-        .take_until(state.shutdown.cancelled_owned());
+        .map(Ok::<_, Infallible>);
 
     // Keep-alive comments stop proxies from closing an idle connection.
     Sse::new(events).keep_alive(KeepAlive::default())
@@ -353,28 +351,5 @@ async fn log_changes(hub: Hub) {
             // Every sender is gone, so the program is shutting down.
             Err(RecvError::Closed) => break,
         }
-    }
-}
-
-/// The home page. Askama checks `templates/index.html` against this
-/// struct at compile time, so a typo in a template variable is a build error.
-#[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate {
-    version: &'static str,
-}
-
-async fn index() -> Response {
-    let page = IndexTemplate {
-        version: labwatch_core::version(),
-    };
-
-    match page.render() {
-        Ok(html) => Html(html).into_response(),
-        Err(err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("template error: {err}"),
-        )
-            .into_response(),
     }
 }

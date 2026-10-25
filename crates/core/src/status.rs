@@ -36,6 +36,16 @@ impl Status {
         }
     }
 
+    /// Lowercase name, used for CSS classes: "ok", "warning", ...
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Status::Ok => "ok",
+            Status::Unknown => "unknown",
+            Status::Warning => "warning",
+            Status::Critical => "critical",
+        }
+    }
+
     /// Grades a value against warning and critical thresholds.
     pub fn from_thresholds(value: f64, warn: f64, crit: f64) -> Self {
         if value >= crit {
@@ -102,6 +112,15 @@ pub struct Section {
 }
 
 impl Section {
+    /// A placeholder for a collector that hasn't reported yet.
+    pub fn pending(collector: impl Into<String>) -> Self {
+        Self {
+            collector: collector.into(),
+            status: Status::Unknown,
+            checks: Vec::new(),
+        }
+    }
+
     pub fn new(collector: impl Into<String>, checks: Vec<Check>) -> Self {
         // `.max()` returns an Option because the list could be empty.
         let status = checks.iter().map(|c| c.status).max().unwrap_or(Status::Ok);

@@ -2,60 +2,62 @@
 
 use crate::status::Section;
 
-/// One slot per collector, in display order. A slot is `None` until that
-/// collector finishes its first run.
+/// One section per collector, in display order. Each starts as a pending
+/// placeholder and is replaced when that collector finishes its first run,
+/// so every collector has a card on the dashboard from the start.
 #[derive(Debug, Default)]
 pub struct Store {
-    slots: Vec<Option<Section>>,
+    sections: Vec<Section>,
 }
 
 impl Store {
-    pub fn with_slots(count: usize) -> Self {
+    pub fn new(collectors: Vec<String>) -> Self {
         Self {
-            slots: vec![None; count],
+            sections: collectors.into_iter().map(Section::pending).collect(),
         }
     }
 
     pub fn set(&mut self, slot: usize, section: Section) {
-        if let Some(entry) = self.slots.get_mut(slot) {
-            *entry = Some(section);
+        if let Some(entry) = self.sections.get_mut(slot) {
+            *entry = section;
         }
     }
 
-    /// Every section that has reported at least once, in slot order.
+    /// Every collector's latest section, in display order.
     pub fn sections(&self) -> Vec<Section> {
-        // `flatten` skips the `None`s and unwraps the `Some`s.
-        self.slots.iter().flatten().cloned().collect()
+        self.sections.clone()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::status::Status;
 
-    #[test]
-    fn sections_keep_slot_order_and_skip_empty() {
-        let mut store = Store::with_slots(3);
-        store.set(2, Section::new("vpn", vec![]));
-        store.set(0, Section::new("host", vec![]));
-
-        let names: Vec<String> = store.sections().into_iter().map(|s| s.collector).collect();
-        assert_eq!(names, ["host", "vpn"]);
+    fn store() -> Store {
+        Store::new(vec!["host".into(), "vpn".into()])
     }
 
     #[test]
-    fn set_replaces_previous_result() {
-        let mut store = Store::with_slots(1);
-        store.set(0, Section::new("first", vec![]));
-        store.set(0, Section::new("second", vec![]));
+    fn starts_with_pending_sections_in_order() {
+        let sections = store().sections();
+        let names: Vec<&str> = sections.iter().map(|s| s.collector.as_str()).collect();
 
-        assert_eq!(store.sections()[0].collector, "second");
+        assert_eq!(names, ["host", "vpn"]);
+        assert!(sections.iter().all(|s| s.status == Status::Unknown));
+    }
+
+    #[test]
+    fn set_replaces_a_slot() {
+        let mut store = store();
+        store.set(1, Section::new("vpn", vec![]));
+        assert_eq!(store.sections()[1].status, Status::Ok);
     }
 
     #[test]
     fn out_of_range_slot_is_ignored() {
-        let mut store = Store::with_slots(1);
+        let mut store = store();
         store.set(5, Section::new("nope", vec![]));
-        assert!(store.sections().is_empty());
+        assert_eq!(store.sections().len(), 2);
     }
 }

@@ -1,0 +1,20 @@
+<section class="base" id="base" data-status="{{ status.as_str() }}"
+         sse-swap="summary" hx-swap="outerHTML">
+  <span class="beacon" role="img" aria-label="Overall status: {{ status }}"></span>
+
+  <div class="base-text">
+    <p class="base-name">Home base on {{ host }}</p>
+    <h1 class="base-headline">{{ headline }}</h1>
+    <p class="base-detail">{{ detail }}</p>
+  </div>
+
+  <ul class="base-stations">
+    {% for station in stations %}
+      <li>
+        <a href="#station-{{ station.id }}" data-status="{{ station.section.status.as_str() }}">
+          <span class="light"></span>{{ station.title }}
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
