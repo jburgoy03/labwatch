@@ -2,12 +2,15 @@
 
 use std::fmt;
 
+use serde::Serialize;
+
 /// Health of one check.
 ///
 /// The variants are declared from best to worst, and `PartialOrd`/`Ord`
 /// derive their ordering from that order. So `Status::Ok < Status::Critical`,
 /// and the worst of a list is just `.max()`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Status {
     Ok,
     /// We couldn't tell, e.g. no temperature sensors on this machine.
@@ -44,7 +47,7 @@ impl fmt::Display for Status {
 }
 
 /// One line on the dashboard: a name, its status and a human-readable detail.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Check {
     pub name: String,
     pub status: Status,
@@ -61,6 +64,26 @@ impl Check {
     }
 }
 
+/// All the checks from one collector, plus the worst status among them.
+#[derive(Debug, Clone, Serialize)]
+pub struct Section {
+    pub collector: String,
+    pub status: Status,
+    pub checks: Vec<Check>,
+}
+
+impl Section {
+    pub fn new(collector: impl Into<String>, checks: Vec<Check>) -> Self {
+        // `.max()` returns an Option because the list could be empty.
+        let status = checks.iter().map(|c| c.status).max().unwrap_or(Status::Ok);
+        Self {
+            collector: collector.into(),
+            status,
+            checks,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,6 +93,26 @@ mod tests {
         assert_eq!(Status::from_thresholds(50.0, 80.0, 95.0), Status::Ok);
         assert_eq!(Status::from_thresholds(80.0, 80.0, 95.0), Status::Warning);
         assert_eq!(Status::from_thresholds(99.0, 80.0, 95.0), Status::Critical);
+    }
+
+    #[test]
+    fn section_takes_worst_status() {
+        let section = Section::new(
+            "host",
+            vec![
+                Check::new("CPU", Status::Ok, ""),
+                Check::new("Disk", Status::Warning, ""),
+            ],
+        );
+        assert_eq!(section.status, Status::Warning);
+    }
+
+    #[test]
+    fn status_serializes_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&Status::Warning).unwrap(),
+            "\"warning\""
+        );
     }
 
     #[test]

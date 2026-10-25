@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand};
 use labwatch_core::{
     collectors::{CPU_WARMUP, Collector, HostCollector, ServiceCollector, VpnCollector},
     config::Config,
-    status::Check,
+    status::Section,
 };
 
 /// Homelab status dashboard.
@@ -36,7 +36,11 @@ enum Command {
     /// Run the web dashboard.
     Serve,
     /// Collect once, print the results and exit.
-    Snapshot,
+    Snapshot {
+        /// Print JSON instead of a table.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 // No `#[tokio::main]` here: reqwest's blocking client starts its own
@@ -49,34 +53,46 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Serve => tokio::runtime::Runtime::new()?.block_on(serve(&config)),
-        Command::Snapshot => snapshot(&config),
+        Command::Snapshot { json } => snapshot(&config, json),
     }
 }
 
-fn snapshot(config: &Config) -> Result<()> {
+fn snapshot(config: &Config, json: bool) -> Result<()> {
     let mut host = HostCollector::new(config.host.mounts.clone());
     std::thread::sleep(CPU_WARMUP);
 
-    let checks = host.collect()?;
-    print_section(host.name(), &checks);
-
-    let mut services = ServiceCollector::new(config.services.clone())?;
-    let checks = services.collect()?;
-    print_section(services.name(), &checks);
+    let mut sections = vec![
+        run(&mut host)?,
+        run(&mut ServiceCollector::new(config.services.clone())?)?,
+    ];
 
     // `if let` runs the block only when `[vpn]` is configured.
     if let Some(vpn_config) = &config.vpn {
-        let mut vpn = VpnCollector::new(vpn_config.clone())?;
-        let checks = vpn.collect()?;
-        print_section(vpn.name(), &checks);
+        sections.push(run(&mut VpnCollector::new(vpn_config.clone())?)?);
+    }
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&sections)?);
+    } else {
+        sections.iter().for_each(print_section);
     }
 
     Ok(())
 }
 
-fn print_section(name: &str, checks: &[Check]) {
-    println!("{name}");
-    for check in checks {
+/// Runs any collector and wraps its checks in a `Section`.
+///
+/// `impl Collector` means "any type that implements the trait". The compiler
+/// generates a copy of this function per collector type, like a C# generic
+/// method with a `where T : ICollector` constraint.
+fn run(collector: &mut impl Collector) -> Result<Section> {
+    let checks = collector.collect()?;
+    Ok(Section::new(collector.name(), checks))
+}
+
+fn print_section(section: &Section) {
+    println!("{} [{}]", section.collector, section.status);
+    for check in &section.checks {
         println!("  {:<7} {:<22} {}", check.status, check.name, check.detail);
     }
 }
