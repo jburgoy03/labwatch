@@ -1,6 +1,6 @@
 use std::{
+    collections::HashMap,
     path::PathBuf,
-    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -19,10 +19,11 @@ use labwatch_core::{
         CPU_WARMUP, Collector, DockerCollector, HostCollector, ServiceCollector, VpnCollector,
     },
     config::Config,
+    hub::Hub,
     scheduler,
-    status::Section,
-    store::{SharedStore, Store},
+    status::{Section, Status},
 };
+use tokio::sync::broadcast::error::RecvError;
 
 /// Homelab status dashboard.
 ///
@@ -135,7 +136,10 @@ async fn serve(config: &Config) -> Result<()> {
     let intervals = &config.intervals;
 
     let slot_count = 2 + usize::from(config.docker.is_some()) + usize::from(config.vpn.is_some());
-    let store: SharedStore = Arc::new(RwLock::new(Store::with_slots(slot_count)));
+    let hub = Hub::new(slot_count);
+
+    // Subscribe before starting collectors so the logger sees their first run.
+    tokio::spawn(log_changes(hub.clone()));
 
     // A closure that hands out 0, 1, 2, ... It's `mut` because it changes
     // the `slot` variable it captured (Rust calls this an `FnMut`).
@@ -145,26 +149,26 @@ async fn serve(config: &Config) -> Result<()> {
         slot - 1
     };
 
-    // Each `store.clone()` copies the Arc (a pointer + refcount bump),
-    // not the data. Every task shares the same Store.
+    // Each `hub.clone()` copies two handles (an Arc and a channel sender),
+    // not the data. Every task shares the same store and channel.
     scheduler::spawn(
         HostCollector::new(config.host.mounts.clone()),
         secs(intervals.host_secs),
         next_slot(),
-        store.clone(),
+        hub.clone(),
     );
     scheduler::spawn(
         ServiceCollector::new(config.services.clone())?,
         secs(intervals.services_secs),
         next_slot(),
-        store.clone(),
+        hub.clone(),
     );
     if let Some(docker_config) = &config.docker {
         scheduler::spawn(
             DockerCollector::new(docker_config)?,
             secs(intervals.docker_secs),
             next_slot(),
-            store.clone(),
+            hub.clone(),
         );
     }
     if let Some(vpn_config) = &config.vpn {
@@ -172,14 +176,14 @@ async fn serve(config: &Config) -> Result<()> {
             VpnCollector::new(vpn_config.clone())?,
             secs(intervals.vpn_secs),
             next_slot(),
-            store.clone(),
+            hub.clone(),
         );
     }
 
     let app = Router::new()
         .route("/", get(index))
         .route("/api/status", get(api_status))
-        .with_state(store);
+        .with_state(hub);
 
     let listener = tokio::net::TcpListener::bind(&config.server.bind)
         .await
@@ -202,11 +206,37 @@ async fn shutdown_signal() {
         .expect("failed to listen for Ctrl+C");
 }
 
-/// `State(store)` is an axum extractor: axum hands this handler the store
+/// `State(hub)` is an axum extractor: axum hands this handler the hub
 /// we registered with `.with_state(...)`, like constructor injection.
-async fn api_status(State(store): State<SharedStore>) -> Json<Vec<Section>> {
-    let sections = store.read().expect("store lock poisoned").sections();
-    Json(sections)
+async fn api_status(State(hub): State<Hub>) -> Json<Vec<Section>> {
+    Json(hub.sections())
+}
+
+/// Subscribes to the hub and prints a line whenever a collector's overall
+/// status changes, e.g. `[services] OK -> CRIT`.
+async fn log_changes(hub: Hub) {
+    let mut updates = hub.subscribe();
+    let mut last_seen: HashMap<String, Status> = HashMap::new();
+
+    loop {
+        match updates.recv().await {
+            Ok(section) => {
+                // `insert` returns the previous value, if there was one.
+                match last_seen.insert(section.collector.clone(), section.status) {
+                    None => println!("[{}] first run: {}", section.collector, section.status),
+                    Some(previous) if previous != section.status => {
+                        println!("[{}] {previous} -> {}", section.collector, section.status);
+                    }
+                    Some(_) => {} // unchanged, stay quiet
+                }
+            }
+            // We fell behind and the channel dropped old messages. Not fatal:
+            // the next message is still current.
+            Err(RecvError::Lagged(skipped)) => eprintln!("logger skipped {skipped} updates"),
+            // Every sender is gone, so the program is shutting down.
+            Err(RecvError::Closed) => break,
+        }
+    }
 }
 
 /// The home page. Askama checks `templates/index.html` against this

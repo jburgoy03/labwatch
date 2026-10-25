@@ -1,7 +1,4 @@
-//! The latest results from every collector, shared between the background
-//! collector tasks (writers) and the web server (readers).
-
-use std::sync::{Arc, RwLock};
+//! The latest result from every collector. Shared through `Hub`.
 
 use crate::status::Section;
 
@@ -11,16 +8,6 @@ use crate::status::Section;
 pub struct Store {
     slots: Vec<Option<Section>>,
 }
-
-/// How the store is shared across threads:
-/// - `Arc` (atomically reference-counted) lets many tasks own the same store;
-///   it's freed when the last owner drops it.
-/// - `RwLock` allows many readers or one writer at a time.
-///
-/// Rust won't compile code that shares mutable data across threads without
-/// something like this. In C# you could share a field and hope; here the
-/// type system makes you choose.
-pub type SharedStore = Arc<RwLock<Store>>;
 
 impl Store {
     pub fn with_slots(count: usize) -> Self {

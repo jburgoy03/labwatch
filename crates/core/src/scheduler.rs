@@ -9,12 +9,12 @@ use tokio::{
 
 use crate::{
     collectors::{CPU_WARMUP, Collector},
+    hub::Hub,
     status::{Check, Section, Status},
-    store::SharedStore,
 };
 
-/// Starts a task that runs `collector` every `every` and writes its result
-/// into `slot` of the store.
+/// Starts a task that runs `collector` every `every` and publishes its
+/// result to `slot` of the hub.
 ///
 /// The bounds explain themselves:
 /// - `C: Collector` it must be a collector,
@@ -22,12 +22,7 @@ use crate::{
 ///   task may run for the life of the program.
 ///
 /// `Send` comes from the `Collector` trait itself.
-pub fn spawn<C>(
-    mut collector: C,
-    every: Duration,
-    slot: usize,
-    store: SharedStore,
-) -> JoinHandle<()>
+pub fn spawn<C>(mut collector: C, every: Duration, slot: usize, hub: Hub) -> JoinHandle<()>
 where
     C: Collector + 'static,
 {
@@ -56,19 +51,7 @@ where
                 ),
             };
 
-            println!(
-                "[{name}] {} checks, {}",
-                section.checks.len(),
-                section.status
-            );
-
-            // Hold the write lock only for the assignment. The guard returned
-            // by `write()` unlocks automatically when it goes out of scope at
-            // the end of this statement.
-            store
-                .write()
-                .expect("store lock poisoned")
-                .set(slot, section);
+            hub.publish(slot, section);
         }
     })
 }

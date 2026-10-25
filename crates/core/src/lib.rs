@@ -2,6 +2,7 @@
 
 pub mod collectors;
 pub mod config;
+pub mod hub;
 pub mod scheduler;
 pub mod status;
 pub mod store;
