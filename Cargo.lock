@@ -1265,10 +1265,13 @@ dependencies = [
  "askama",
  "axum",
  "clap",
+ "futures-util",
  "labwatch-core",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2380,6 +2383,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

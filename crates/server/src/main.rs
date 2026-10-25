@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    convert::Infallible,
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -10,10 +11,14 @@ use axum::{
     Json, Router,
     extract::{Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{
+        Html, IntoResponse, Response,
+        sse::{Event, KeepAlive, Sse},
+    },
     routing::get,
 };
 use clap::{Parser, Subcommand};
+use futures_util::{Stream, StreamExt, future, stream};
 use labwatch_core::{
     collectors::{
         CPU_WARMUP, Collector, DockerCollector, HostCollector, ServiceCollector, VpnCollector,
@@ -26,6 +31,8 @@ use labwatch_core::{
 };
 use serde::Deserialize;
 use tokio::sync::broadcast::error::RecvError;
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_util::sync::CancellationToken;
 
 /// Everything the HTTP handlers need. axum gives each handler a clone,
 /// which is cheap because both fields are handles to shared data.
@@ -33,6 +40,9 @@ use tokio::sync::broadcast::error::RecvError;
 struct AppState {
     hub: Hub,
     history: History,
+    /// Cancelled on Ctrl+C so long-lived SSE streams end and shutdown
+    /// doesn't wait on them forever.
+    shutdown: CancellationToken,
 }
 
 /// Homelab status dashboard.
@@ -148,6 +158,7 @@ async fn serve(config: &Config) -> Result<()> {
     let slot_count = 2 + usize::from(config.docker.is_some()) + usize::from(config.vpn.is_some());
     let hub = Hub::new(slot_count);
     let history = History::open(&config.storage.path).await?;
+    let shutdown = CancellationToken::new();
 
     // Subscribe before starting collectors so these see the first run.
     tokio::spawn(log_changes(hub.clone()));
@@ -197,7 +208,12 @@ async fn serve(config: &Config) -> Result<()> {
         .route("/", get(index))
         .route("/api/status", get(api_status))
         .route("/api/history", get(api_history))
-        .with_state(AppState { hub, history });
+        .route("/api/events", get(api_events))
+        .with_state(AppState {
+            hub,
+            history,
+            shutdown: shutdown.clone(),
+        });
 
     let listener = tokio::net::TcpListener::bind(&config.server.bind)
         .await
@@ -205,7 +221,7 @@ async fn serve(config: &Config) -> Result<()> {
 
     println!("Labwatch listening on http://{}", config.server.bind);
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(shutdown))
         .await?;
 
     println!("Shut down cleanly");
@@ -213,11 +229,13 @@ async fn serve(config: &Config) -> Result<()> {
 }
 
 /// Resolves when Ctrl+C is pressed, which tells axum to stop accepting
-/// connections and finish in-flight requests.
-async fn shutdown_signal() {
+/// connections and finish in-flight requests. Cancelling the token first
+/// ends every open SSE stream, so there's nothing left to wait for.
+async fn shutdown_signal(shutdown: CancellationToken) {
     tokio::signal::ctrl_c()
         .await
         .expect("failed to listen for Ctrl+C");
+    shutdown.cancel();
 }
 
 /// `State(state)` is an axum extractor: axum hands this handler the state
@@ -247,6 +265,36 @@ async fn api_history(
         .map(Json)
         // Turn a database error into a 500 response instead of a panic.
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, format!("{err:#}")))
+}
+
+/// Server-Sent Events: the current sections right away, then each new one
+/// as collectors publish it. The browser listens with `EventSource`.
+///
+/// The return type `impl Stream<...>` says "some stream of events" without
+/// naming the long, generated type that the combinators below build up.
+async fn api_events(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    // Subscribe before taking the snapshot, so nothing published in
+    // between can slip through the gap.
+    let updates = BroadcastStream::new(state.hub.subscribe())
+        // A `Lagged` error just means we skipped some old updates; drop it.
+        .filter_map(|message| future::ready(message.ok()));
+
+    let snapshot = stream::iter(state.hub.sections());
+
+    let events = snapshot
+        .chain(updates)
+        .filter_map(|section| {
+            future::ready(Event::default().event("section").json_data(&section).ok())
+        })
+        // SSE streams carry `Result`s; ours can't fail, hence `Infallible`.
+        .map(Ok::<_, Infallible>)
+        // End the stream when shutdown starts.
+        .take_until(state.shutdown.cancelled_owned());
+
+    // Keep-alive comments stop proxies from closing an idle connection.
+    Sse::new(events).keep_alive(KeepAlive::default())
 }
 
 /// Saves every published section to the database.
