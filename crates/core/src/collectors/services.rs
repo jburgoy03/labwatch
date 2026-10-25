@@ -3,7 +3,8 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use reqwest::{StatusCode, blocking::Client};
+use reqwest::{Client, StatusCode};
+use tokio::task::JoinSet;
 
 use super::Collector;
 use crate::{
@@ -26,28 +27,31 @@ impl ServiceCollector {
             .build()?;
         Ok(Self { client, services })
     }
+}
 
-    fn check(&self, service: &ServiceConfig) -> Check {
-        let started = Instant::now();
-        let result = self
-            .client
-            .get(&service.url)
-            .timeout(Duration::from_secs(service.timeout_secs))
-            .send();
+/// Checks one service. Takes owned values (not `&self`) so it can run as
+/// its own tokio task: a spawned task may outlive the caller, so the
+/// borrow checker won't let it hold references.
+async fn check(client: Client, service: ServiceConfig) -> Check {
+    let started = Instant::now();
+    let result = client
+        .get(&service.url)
+        .timeout(Duration::from_secs(service.timeout_secs))
+        .send()
+        .await;
 
-        // `match` with guards (`if ...`) picks the first arm that fits.
-        let (status, detail) = match result {
-            Ok(response) => classify(response.status(), started.elapsed().as_millis()),
-            Err(err) if err.is_timeout() => (
-                Status::Critical,
-                format!("timed out after {}s", service.timeout_secs),
-            ),
-            Err(err) if err.is_connect() => (Status::Critical, "unreachable".to_string()),
-            Err(err) => (Status::Critical, err.to_string()),
-        };
+    // `match` with guards (`if ...`) picks the first arm that fits.
+    let (status, detail) = match result {
+        Ok(response) => classify(response.status(), started.elapsed().as_millis()),
+        Err(err) if err.is_timeout() => (
+            Status::Critical,
+            format!("timed out after {}s", service.timeout_secs),
+        ),
+        Err(err) if err.is_connect() => (Status::Critical, "unreachable".to_string()),
+        Err(err) => (Status::Critical, err.to_string()),
+    };
 
-        Check::new(&service.name, status, detail)
-    }
+    Check::new(service.name, status, detail)
 }
 
 /// Turns an HTTP response into a status. Pulled out of `check` so it can
@@ -86,8 +90,25 @@ impl Collector for ServiceCollector {
         "services"
     }
 
-    fn collect(&mut self) -> Result<Vec<Check>> {
-        Ok(self.services.iter().map(|s| self.check(s)).collect())
+    /// Checks every service at the same time, so total time is the slowest
+    /// service rather than the sum of all of them.
+    async fn collect(&mut self) -> Result<Vec<Check>> {
+        let mut tasks = JoinSet::new();
+
+        for (index, service) in self.services.iter().enumerate() {
+            // Cloning a reqwest Client is cheap: it's a handle to a shared
+            // connection pool, like copying a reference.
+            let client = self.client.clone();
+            let service = service.clone();
+            // `async move` moves `client` and `service` into the task.
+            tasks.spawn(async move { (index, check(client, service).await) });
+        }
+
+        // Tasks finish in any order; collect then sort back to config order.
+        let mut results = tasks.join_all().await;
+        results.sort_by_key(|(index, _)| *index);
+
+        Ok(results.into_iter().map(|(_, check)| check).collect())
     }
 }
 

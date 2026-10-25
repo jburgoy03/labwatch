@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
 
 use anyhow::{Context, Result};
 use askama::Template;
@@ -43,33 +43,47 @@ enum Command {
     },
 }
 
-// No `#[tokio::main]` here: reqwest's blocking client starts its own
-// runtime and panics if called from inside another one. So only `serve`
-// builds a tokio runtime. In Phase 2 everything goes async and this
-// goes back to `#[tokio::main]`.
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = Config::load(&cli.config)?;
 
     match cli.command {
-        Command::Serve => tokio::runtime::Runtime::new()?.block_on(serve(&config)),
-        Command::Snapshot { json } => snapshot(&config, json),
+        Command::Serve => serve(&config).await,
+        Command::Snapshot { json } => snapshot(&config, json).await,
     }
 }
 
-fn snapshot(config: &Config, json: bool) -> Result<()> {
+async fn snapshot(config: &Config, json: bool) -> Result<()> {
     let mut host = HostCollector::new(config.host.mounts.clone());
-    std::thread::sleep(CPU_WARMUP);
+    let mut services = ServiceCollector::new(config.services.clone())?;
 
-    let mut sections = vec![
-        run(&mut host)?,
-        run(&mut ServiceCollector::new(config.services.clone())?)?,
-    ];
+    // `Option<VpnConfig>` -> `Option<Result<VpnCollector>>` -> `Result<Option<VpnCollector>>`.
+    // `transpose` flips the two so `?` can catch a construction error.
+    let mut vpn = config.vpn.clone().map(VpnCollector::new).transpose()?;
 
-    // `if let` runs the block only when `[vpn]` is configured.
-    if let Some(vpn_config) = &config.vpn {
-        sections.push(run(&mut VpnCollector::new(vpn_config.clone())?)?);
-    }
+    // `.await` here yields to the runtime instead of blocking the thread.
+    tokio::time::sleep(CPU_WARMUP).await;
+
+    let started = Instant::now();
+
+    // An async block is a future we can hand to `try_join!` like any other.
+    let vpn_section = async {
+        match vpn.as_mut() {
+            Some(vpn) => run(vpn).await.map(Some),
+            None => Ok(None),
+        }
+    };
+
+    // Run all collectors at once; `try_join!` stops at the first error.
+    let (host_section, services_section, vpn_section) =
+        tokio::try_join!(run(&mut host), run(&mut services), vpn_section)?;
+
+    // stderr, so `--json` output on stdout stays valid JSON.
+    eprintln!("collected in {} ms", started.elapsed().as_millis());
+
+    let mut sections = vec![host_section, services_section];
+    sections.extend(vpn_section);
 
     if json {
         println!("{}", serde_json::to_string_pretty(&sections)?);
@@ -85,8 +99,8 @@ fn snapshot(config: &Config, json: bool) -> Result<()> {
 /// `impl Collector` means "any type that implements the trait". The compiler
 /// generates a copy of this function per collector type, like a C# generic
 /// method with a `where T : ICollector` constraint.
-fn run(collector: &mut impl Collector) -> Result<Section> {
-    let checks = collector.collect()?;
+async fn run(collector: &mut impl Collector) -> Result<Section> {
+    let checks = collector.collect().await?;
     Ok(Section::new(collector.name(), checks))
 }
 

@@ -3,7 +3,7 @@
 use std::{net::IpAddr, time::Duration};
 
 use anyhow::Result;
-use reqwest::{StatusCode, blocking::Client};
+use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
 use super::Collector;
@@ -38,7 +38,7 @@ impl VpnCollector {
         Ok(Self { client, config })
     }
 
-    fn check(&self) -> Check {
+    async fn check(&self) -> Check {
         let url = format!(
             "{}/v1/publicip/ip",
             self.config.gluetun_url.trim_end_matches('/')
@@ -49,7 +49,7 @@ impl VpnCollector {
             request = request.header("X-API-Key", key);
         }
 
-        let response = match request.send() {
+        let response = match request.send().await {
             Ok(response) => response,
             Err(err) if err.is_timeout() => {
                 return Check::new(CHECK_NAME, Status::Critical, "control server timed out");
@@ -63,7 +63,7 @@ impl VpnCollector {
             return Check::new(CHECK_NAME, Status::Critical, "API key rejected");
         }
 
-        match response.json::<PublicIpResponse>() {
+        match response.json::<PublicIpResponse>().await {
             Ok(body) => evaluate(&body, self.config.expected_ip),
             Err(err) => Check::new(
                 CHECK_NAME,
@@ -102,8 +102,8 @@ impl Collector for VpnCollector {
         "vpn"
     }
 
-    fn collect(&mut self) -> Result<Vec<Check>> {
-        Ok(vec![self.check()])
+    async fn collect(&mut self) -> Result<Vec<Check>> {
+        Ok(vec![self.check().await])
     }
 }
 

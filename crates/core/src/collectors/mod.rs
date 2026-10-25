@@ -8,19 +8,22 @@ pub use host::{CPU_WARMUP, HostCollector};
 pub use services::ServiceCollector;
 pub use vpn::VpnCollector;
 
+use std::future::Future;
+
 use anyhow::Result;
 
 use crate::status::Check;
 
 /// Anything that can produce a list of checks.
 ///
-/// This is Rust's version of an interface. `&mut self` because collectors
-/// keep state between runs (sysinfo needs two readings to compute CPU usage).
-/// In Phase 2 this becomes async so slow network checks don't block.
-pub trait Collector {
+/// `collect` returns a future instead of being a plain `async fn` so we can
+/// promise it's `Send`: safe to move to another thread. tokio needs that to
+/// run collectors as background tasks. Implementations can still just
+/// write `async fn collect(&mut self)`.
+pub trait Collector: Send {
     /// Short name shown as the section heading, e.g. "host".
     fn name(&self) -> &str;
 
     /// Runs every check this collector owns.
-    fn collect(&mut self) -> Result<Vec<Check>>;
+    fn collect(&mut self) -> impl Future<Output = Result<Vec<Check>>> + Send;
 }

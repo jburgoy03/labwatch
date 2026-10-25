@@ -66,7 +66,9 @@ impl HostCollector {
         )
     }
 
-    fn temperature_check(&self) -> Check {
+    /// `None` when the machine has no temperature sensors (common on
+    /// Windows), so the check is left out instead of showing UNKNOWN forever.
+    fn temperature_check(&self) -> Option<Check> {
         let components = Components::new_with_refreshed_list();
         // `filter_map` keeps only the sensors that returned a reading.
         let hottest = components
@@ -77,14 +79,14 @@ impl HostCollector {
                 Some(max.map_or(t, |m| m.max(t)))
             });
 
-        match hottest {
-            Some(t) => Check::new(
+        // `Option::map` runs the closure only when there's a value.
+        hottest.map(|t| {
+            Check::new(
                 "Temperature",
                 Status::from_thresholds(t, TEMP_WARN, TEMP_CRIT),
                 format!("hottest sensor {t:.0} °C"),
-            ),
-            None => Check::new("Temperature", Status::Unknown, "no sensors reported"),
-        }
+            )
+        })
     }
 
     fn disk_checks(&self) -> Vec<Check> {
@@ -126,12 +128,12 @@ impl Collector for HostCollector {
         "host"
     }
 
-    fn collect(&mut self) -> Result<Vec<Check>> {
-        let mut checks = vec![
-            self.cpu_check(),
-            self.memory_check(),
-            self.temperature_check(),
-        ];
+    // sysinfo calls are fast and synchronous, so this async fn never
+    // actually awaits anything. That's fine: it still fits the trait.
+    async fn collect(&mut self) -> Result<Vec<Check>> {
+        let mut checks = vec![self.cpu_check(), self.memory_check()];
+        // `extend` with an Option adds the check only if it's `Some`.
+        checks.extend(self.temperature_check());
         checks.extend(self.disk_checks());
         Ok(checks)
     }
