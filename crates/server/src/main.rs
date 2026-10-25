@@ -10,7 +10,7 @@ use axum::{
 };
 use clap::{Parser, Subcommand};
 use labwatch_core::{
-    collectors::{CPU_WARMUP, Collector, HostCollector},
+    collectors::{CPU_WARMUP, Collector, HostCollector, ServiceCollector, VpnCollector},
     config::Config,
     status::Check,
 };
@@ -39,13 +39,16 @@ enum Command {
     Snapshot,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+// No `#[tokio::main]` here: reqwest's blocking client starts its own
+// runtime and panics if called from inside another one. So only `serve`
+// builds a tokio runtime. In Phase 2 everything goes async and this
+// goes back to `#[tokio::main]`.
+fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = Config::load(&cli.config)?;
 
     match cli.command {
-        Command::Serve => serve(&config).await,
+        Command::Serve => tokio::runtime::Runtime::new()?.block_on(serve(&config)),
         Command::Snapshot => snapshot(&config),
     }
 }
@@ -56,6 +59,18 @@ fn snapshot(config: &Config) -> Result<()> {
 
     let checks = host.collect()?;
     print_section(host.name(), &checks);
+
+    let mut services = ServiceCollector::new(config.services.clone())?;
+    let checks = services.collect()?;
+    print_section(services.name(), &checks);
+
+    // `if let` runs the block only when `[vpn]` is configured.
+    if let Some(vpn_config) = &config.vpn {
+        let mut vpn = VpnCollector::new(vpn_config.clone())?;
+        let checks = vpn.collect()?;
+        print_section(vpn.name(), &checks);
+    }
+
     Ok(())
 }
 

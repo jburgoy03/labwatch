@@ -10,6 +10,7 @@ mounts = ["/", "/mnt/media"]
 [vpn]
 gluetun_url = "http://192.168.1.10:8000"
 expected_ip = "203.0.113.7"
+api_key = "your-gluetun-api-key"
 
 [[services]]
 name = "Jellyfin"

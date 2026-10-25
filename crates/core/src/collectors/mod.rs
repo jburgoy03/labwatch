@@ -1,8 +1,12 @@
 //! Data sources. Each one implements the `Collector` trait.
 
 mod host;
+mod services;
+mod vpn;
 
 pub use host::{CPU_WARMUP, HostCollector};
+pub use services::ServiceCollector;
+pub use vpn::VpnCollector;
 
 use anyhow::Result;
 

@@ -54,7 +54,7 @@ impl Default for HostConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VpnConfig {
     /// Gluetun's control server, e.g. "http://192.168.1.10:8000".
@@ -63,9 +63,12 @@ pub struct VpnConfig {
     /// The exit IP you expect. Serde parses this into an `IpAddr`,
     /// so a typo like "1.2.3" fails when the config loads.
     pub expected_ip: Option<IpAddr>,
+
+    /// API key from Gluetun's auth config (`/gluetun/auth/config.toml`).
+    pub api_key: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceConfig {
     pub name: String,
