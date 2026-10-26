@@ -154,6 +154,10 @@ async fn serve(config: &Config) -> Result<()> {
     let intervals = &config.intervals;
 
     let history = History::open(&config.storage.path).await?;
+    let closed = history.close_interrupted_incidents(unix_now()).await?;
+    if closed > 0 {
+        println!("closed {closed} incident(s) left open by the last run");
+    }
     let shutdown = CancellationToken::new();
 
     // Build the collectors first so the hub can be told their names up
@@ -175,6 +179,7 @@ async fn serve(config: &Config) -> Result<()> {
     // Subscribe before starting collectors so these see the first run.
     tokio::spawn(log_changes(hub.clone()));
     tokio::spawn(record_history(hub.clone(), history.clone()));
+    tokio::spawn(record_incidents(hub.clone(), history.clone()));
     tokio::spawn(rollup_every_hour(history.clone()));
 
     // Slots follow the same order as `names` above.
@@ -314,6 +319,28 @@ async fn record_history(hub: Hub, history: History) {
     }
 }
 
+/// Opens and closes incidents as checks break and recover. Owns its own
+/// `Transitions`, separate from the logger's: each subscriber keeps its
+/// own state, so neither needs a lock.
+async fn record_incidents(hub: Hub, history: History) {
+    let mut updates = hub.subscribe();
+    let mut transitions = Transitions::default();
+
+    loop {
+        match updates.recv().await {
+            Ok(section) => {
+                for change in transitions.observe(&section) {
+                    if let Err(err) = history.apply_transition(unix_now(), &change).await {
+                        eprintln!("failed to record incident for {}: {err:#}", change.check);
+                    }
+                }
+            }
+            Err(RecvError::Lagged(skipped)) => eprintln!("incidents skipped {skipped} updates"),
+            Err(RecvError::Closed) => break,
+        }
+    }
+}
+
 /// Rolls samples up into hourly averages and prunes old data, once an hour.
 async fn rollup_every_hour(history: History) {
     let mut ticker = tokio::time::interval(Duration::from_secs(60 * 60));
@@ -323,6 +350,9 @@ async fn rollup_every_hour(history: History) {
         ticker.tick().await;
         if let Err(err) = history.rollup(unix_now()).await {
             eprintln!("history rollup failed: {err:#}");
+        }
+        if let Err(err) = history.prune_incidents(unix_now()).await {
+            eprintln!("incident pruning failed: {err:#}");
         }
     }
 }

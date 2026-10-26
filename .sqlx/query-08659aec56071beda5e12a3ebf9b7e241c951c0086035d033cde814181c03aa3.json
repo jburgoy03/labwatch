@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE incidents SET ended_at = ?, interrupted = 1 WHERE ended_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "08659aec56071beda5e12a3ebf9b7e241c951c0086035d033cde814181c03aa3"
+}

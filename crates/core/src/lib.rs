@@ -4,6 +4,7 @@ pub mod collectors;
 pub mod config;
 pub mod history;
 pub mod hub;
+pub mod incidents;
 pub mod scheduler;
 pub mod status;
 pub mod store;

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE incidents SET worst_status = MAX(worst_status, ?)\n                     WHERE collector = ? AND check_name = ? AND ended_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "ca493adc3c2af6a511f18c3498e3c08d4086a8a8098bc6975b493c7de0cef76e"
+}

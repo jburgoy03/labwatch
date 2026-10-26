@@ -19,7 +19,7 @@ use sqlx::{
 use crate::status::{Section, Status};
 
 const HOUR: i64 = 60 * 60;
-const DAY: i64 = 24 * HOUR;
+pub(crate) const DAY: i64 = 24 * HOUR;
 
 /// Samples older than this are deleted. One hour more than a day, so the
 /// oldest hour is still complete when it gets rolled up.
@@ -57,7 +57,9 @@ pub struct Point {
 /// Cheap to clone: `SqlitePool` is a handle to a shared pool of connections.
 #[derive(Clone)]
 pub struct History {
-    pool: SqlitePool,
+    // `pub(crate)`: visible to the rest of this crate (the incident
+    // queries in incidents.rs) but not to the server. Like C#'s `internal`.
+    pub(crate) pool: SqlitePool,
 }
 
 impl History {

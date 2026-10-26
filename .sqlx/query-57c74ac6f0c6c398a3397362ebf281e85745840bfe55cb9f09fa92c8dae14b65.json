@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO incidents (collector, check_name, started_at, worst_status, detail)\n             VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "57c74ac6f0c6c398a3397362ebf281e85745840bfe55cb9f09fa92c8dae14b65"
+}
