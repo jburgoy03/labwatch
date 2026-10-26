@@ -264,6 +264,7 @@ impl LogRow {
 #[template(path = "incidents.html")]
 pub struct IncidentsTemplate {
     pub version: &'static str,
+    pub stylesheet: &'static str,
     pub rows: Vec<LogRow>,
     pub open: usize,
 }
@@ -283,6 +284,7 @@ pub async fn incidents_page(State(state): State<AppState>) -> Response {
 
     render(&IncidentsTemplate {
         version: labwatch_core::version(),
+        stylesheet: crate::dashboard::stylesheet_href(),
         rows,
         open,
     })

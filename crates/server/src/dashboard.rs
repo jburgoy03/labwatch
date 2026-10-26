@@ -1,7 +1,7 @@
 //! The HTML dashboard: the page itself, the live update stream that keeps
 //! it current, the stylesheet and the status-coloured tab icon.
 
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::LazyLock};
 
 use askama::Template;
 use axum::{
@@ -21,6 +21,31 @@ use labwatch_core::{
 use serde::Deserialize;
 
 use crate::{AppState, section_stream, timeline};
+
+/// The stylesheet, compiled into the binary.
+const STYLESHEET: &str = include_str!("../static/app.css");
+
+/// The stylesheet's URL with a fingerprint of its contents, e.g.
+/// "/static/app.css?v=3f9a0c1e". Any change to app.css gives a new URL, so a
+/// browser or Cloudflare can never pair new HTML with an old cached copy.
+///
+/// `LazyLock` computes it once, on first use, and shares it after that:
+/// like a C# `Lazy<T>` in a static field.
+static STYLESHEET_HREF: LazyLock<String> =
+    LazyLock::new(|| format!("/static/app.css?v={:016x}", fingerprint(STYLESHEET)));
+
+/// The URL every page links its stylesheet with.
+pub(crate) fn stylesheet_href() -> &'static str {
+    &STYLESHEET_HREF
+}
+
+/// FNV-1a: a tiny, fast hash. Not cryptographic, just enough to tell two
+/// versions of a file apart.
+fn fingerprint(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
 
 /// One station on the board: a section plus how to draw it.
 struct Station {
@@ -205,6 +230,7 @@ struct StationTemplate<'a> {
 #[template(path = "index.html")]
 struct IndexTemplate {
     version: &'static str,
+    stylesheet: &'static str,
     banner: String,
     /// The 24-hour incident strip, or empty if it couldn't be built.
     timeline: String,
@@ -374,6 +400,7 @@ pub async fn index(State(state): State<AppState>) -> Response {
 
     render(&IndexTemplate {
         version: labwatch_core::version(),
+        stylesheet: stylesheet_href(),
         banner,
         timeline,
         status,
@@ -437,11 +464,15 @@ pub async fn events(
     Sse::new(events).keep_alive(KeepAlive::default())
 }
 
-/// The stylesheet, compiled into the binary with `include_str!`.
+/// The stylesheet. Pages link it with a fingerprint in the URL, so it can
+/// be cached for a year: a changed file always arrives under a new URL.
 pub async fn stylesheet() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
-        include_str!("../static/app.css"),
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        STYLESHEET,
     )
 }
 
@@ -619,6 +650,18 @@ mod tests {
             "not mounted",
         ));
         assert!(unmounted.scale.is_none());
+    }
+
+    #[test]
+    fn stylesheet_url_carries_its_fingerprint() {
+        let href = stylesheet_href();
+        assert!(href.starts_with("/static/app.css?v="));
+        assert_eq!(href.len(), "/static/app.css?v=".len() + 16);
+        // A different file gets a different fingerprint.
+        assert_ne!(
+            fingerprint("a { color: red }"),
+            fingerprint("a { color: blue }")
+        );
     }
 
     #[test]
