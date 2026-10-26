@@ -5,6 +5,7 @@ pub mod config;
 pub mod history;
 pub mod hub;
 pub mod incidents;
+pub mod registry;
 pub mod scheduler;
 pub mod status;
 pub mod store;

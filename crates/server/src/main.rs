@@ -18,13 +18,11 @@ use axum::{
 use clap::{Parser, Subcommand};
 use futures_util::{Stream, StreamExt, future, stream};
 use labwatch_core::{
-    collectors::{
-        CPU_WARMUP, Collector, DockerCollector, HostCollector, ServiceCollector, VpnCollector,
-    },
+    collectors::{CPU_WARMUP, DockerCollector, HostCollector, ServiceCollector, VpnCollector},
     config::Config,
     history::{History, Point, Range, unix_now},
     hub::Hub,
-    scheduler,
+    registry::Registry,
     status::Section,
     transitions::Transitions,
 };
@@ -83,38 +81,49 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn snapshot(config: &Config, json: bool) -> Result<()> {
-    let mut host = HostCollector::new(config.host.mounts.clone());
-    let mut services = ServiceCollector::new(config.services.clone())?;
+/// Builds every configured collector, in display order. This is the one
+/// place a new integration gets wired in; `serve` and `snapshot` both use it.
+fn build_registry(config: &Config) -> Result<Registry> {
+    let secs = Duration::from_secs;
+    let intervals = &config.intervals;
 
     // `Option<VpnConfig>` -> `Option<Result<VpnCollector>>` -> `Result<Option<VpnCollector>>`.
     // `transpose` flips the two so `?` can catch a construction error.
-    let mut vpn = config.vpn.clone().map(VpnCollector::new).transpose()?;
-    let mut docker = config
+    let docker = config
         .docker
         .as_ref()
         .map(DockerCollector::new)
         .transpose()?;
+    let vpn = config.vpn.clone().map(VpnCollector::new).transpose()?;
+
+    let mut registry = Registry::new();
+    registry
+        .add(
+            HostCollector::new(config.host.mounts.clone()),
+            secs(intervals.host_secs),
+        )
+        .add(
+            ServiceCollector::new(config.services.clone())?,
+            secs(intervals.services_secs),
+        )
+        .add_optional(docker, secs(intervals.docker_secs))
+        .add_optional(vpn, secs(intervals.vpn_secs));
+
+    Ok(registry)
+}
+
+async fn snapshot(config: &Config, json: bool) -> Result<()> {
+    let registry = build_registry(config)?;
 
     // `.await` here yields to the runtime instead of blocking the thread.
     tokio::time::sleep(CPU_WARMUP).await;
 
     let started = Instant::now();
-
-    // Run all collectors at once; `try_join!` stops at the first error.
-    let (host_section, services_section, docker_section, vpn_section) = tokio::try_join!(
-        run(&mut host),
-        run(&mut services),
-        run_optional(docker.as_mut()),
-        run_optional(vpn.as_mut()),
-    )?;
+    // Runs every collector at once and stops at the first error.
+    let sections = registry.collect_once().await?;
 
     // stderr, so `--json` output on stdout stays valid JSON.
     eprintln!("collected in {} ms", started.elapsed().as_millis());
-
-    let mut sections = vec![host_section, services_section];
-    sections.extend(docker_section);
-    sections.extend(vpn_section);
 
     if json {
         println!("{}", serde_json::to_string_pretty(&sections)?);
@@ -125,24 +134,6 @@ async fn snapshot(config: &Config, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Runs a collector only if it's configured.
-async fn run_optional(collector: Option<&mut impl Collector>) -> Result<Option<Section>> {
-    match collector {
-        Some(collector) => run(collector).await.map(Some),
-        None => Ok(None),
-    }
-}
-
-/// Runs any collector and wraps its checks in a `Section`.
-///
-/// `impl Collector` means "any type that implements the trait". The compiler
-/// generates a copy of this function per collector type, like a C# generic
-/// method with a `where T : ICollector` constraint.
-async fn run(collector: &mut impl Collector) -> Result<Section> {
-    let checks = collector.collect().await?;
-    Ok(Section::new(collector.name(), checks))
-}
-
 fn print_section(section: &Section) {
     println!("{} [{}]", section.collector, section.status);
     for check in &section.checks {
@@ -151,9 +142,6 @@ fn print_section(section: &Section) {
 }
 
 async fn serve(config: &Config) -> Result<()> {
-    let secs = Duration::from_secs;
-    let intervals = &config.intervals;
-
     let history = History::open(&config.storage.path).await?;
     let closed = history.close_interrupted_incidents(unix_now()).await?;
     if closed > 0 {
@@ -163,19 +151,8 @@ async fn serve(config: &Config) -> Result<()> {
 
     // Build the collectors first so the hub can be told their names up
     // front. Each gets a placeholder card until its first run finishes.
-    let host = HostCollector::new(config.host.mounts.clone());
-    let services = ServiceCollector::new(config.services.clone())?;
-    let docker = config
-        .docker
-        .as_ref()
-        .map(DockerCollector::new)
-        .transpose()?;
-    let vpn = config.vpn.clone().map(VpnCollector::new).transpose()?;
-
-    let mut names = vec![host.name().to_string(), services.name().to_string()];
-    names.extend(docker.as_ref().map(|c| c.name().to_string()));
-    names.extend(vpn.as_ref().map(|c| c.name().to_string()));
-    let hub = Hub::new(names);
+    let registry = build_registry(config)?;
+    let hub = Hub::new(registry.names());
 
     // Subscribe before starting collectors so these see the first run.
     tokio::spawn(log_changes(hub.clone()));
@@ -183,20 +160,9 @@ async fn serve(config: &Config) -> Result<()> {
     tokio::spawn(record_incidents(hub.clone(), history.clone()));
     tokio::spawn(rollup_every_hour(history.clone()));
 
-    // Slots follow the same order as `names` above.
-    // Each `hub.clone()` copies two handles (an Arc and a channel sender),
-    // not the data. Every task shares the same store and channel.
-    scheduler::spawn(host, secs(intervals.host_secs), 0, hub.clone());
-    scheduler::spawn(services, secs(intervals.services_secs), 1, hub.clone());
-
-    let mut next_slot = 2;
-    if let Some(docker) = docker {
-        scheduler::spawn(docker, secs(intervals.docker_secs), next_slot, hub.clone());
-        next_slot += 1;
-    }
-    if let Some(vpn) = vpn {
-        scheduler::spawn(vpn, secs(intervals.vpn_secs), next_slot, hub.clone());
-    }
+    // Each collector publishes to the slot matching its place in `names`.
+    // The tasks run until the program exits, so their handles aren't kept.
+    registry.spawn_all(&hub);
 
     let app = Router::new()
         .route("/", get(dashboard::index))
