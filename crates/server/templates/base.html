@@ -4,14 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Labwatch{% endblock %}</title>
+  {% block icon %}<link rel="icon" id="favicon" type="image/svg+xml" href="/favicon.svg">{% endblock %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
   <link rel="stylesheet" href="/static/app.css">
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2/dist/htmx.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2/sse.js"></script>
 </head>
 <body>
   {% block content %}{% endblock %}
+
+  <script>
+    // When the live header changes, point the tab icon and title at the
+    // new status, so a background tab shows trouble too.
+    (function () {
+      function sync() {
+        var base = document.getElementById("base");
+        var icon = document.getElementById("favicon");
+        if (!base || !icon) return;
+        var href = "/favicon.svg?status=" + base.dataset.status;
+        if (icon.getAttribute("href") !== href) icon.setAttribute("href", href);
+        document.title = base.dataset.title;
+      }
+      document.addEventListener("htmx:afterSettle", sync);
+      sync();
+    })();
+  </script>
 </body>
 </html>

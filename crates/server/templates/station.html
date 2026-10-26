@@ -1,41 +1,60 @@
-<article class="station" id="station-{{ station.id }}" data-collector="{{ station.id }}"
+<section class="station station-{{ station.kind }}" id="station-{{ station.id }}"
          data-status="{{ station.section.status.as_str() }}"
-         sse-swap="{{ station.id }}" hx-swap="outerHTML">
-  <header class="station-head">
-    <h2>{{ station.title }}</h2>
-    <span class="light" role="img" aria-label="{{ station.section.status }}"></span>
-  </header>
+         sse-swap="{{ station.id }}" hx-swap="outerHTML" aria-labelledby="title-{{ station.id }}">
+  <div class="station-head">
+    <h2 id="title-{{ station.id }}">{{ station.title }}</h2>
+    {% if station.kind == "windows" && !station.section.checks.is_empty() %}
+      <p class="station-count">{{ station.count }}</p>
+    {% endif %}
+  </div>
 
   {% if station.section.checks.is_empty() %}
     <p class="station-waiting">Waiting for the first reading</p>
 
+  {% else if station.kind == "meters" %}
+    <div class="meters">
+      {% for meter in station.meters %}
+        <div class="meter" data-status="{{ meter.status.as_str() }}">
+          <div class="meter-row">
+            <span class="meter-name">{{ meter.name }}</span>
+            <span class="meter-value">{{ meter.detail }}</span>
+          </div>
+          {% if let Some(scale) = meter.scale %}
+            <div class="scale" aria-hidden="true">
+              <span class="zone-warn" style="left: {{ scale.warn }}%; width: {{ scale.warn_width }}%"></span>
+              <span class="zone-crit" style="left: {{ scale.crit }}%"></span>
+              <span class="ticks"></span>
+              <span class="fill" style="width: {{ "{:.1}"|format(scale.value) }}%"></span>
+              <span class="needle" style="left: {{ "{:.1}"|format(scale.value) }}%"></span>
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
   {% else if let Some(feature) = station.feature %}
-    <div class="feature">
-      <p class="feature-label">Traffic leaves home through</p>
-      <p class="feature-value">{{ feature.value }}</p>
+    <div class="readout">
+      {% if station.section.status.as_str() == "ok" %}
+        <p class="readout-label">Traffic leaves home through</p>
+      {% else %}
+        <p class="readout-label">The tunnel needs attention</p>
+      {% endif %}
+      <p class="readout-value">{{ feature.value }}</p>
       {% if !feature.caption.is_empty() %}
-        <p class="feature-caption">{{ feature.caption }}</p>
+        <p class="readout-caption">{{ feature.caption }}</p>
       {% endif %}
     </div>
 
   {% else %}
-    <ul class="readings">
-      {% for check in station.section.checks %}
-        <li class="reading" data-status="{{ check.status.as_str() }}">
-          <span class="light"></span>
-          <span class="reading-name">{{ check.name }}</span>
-          <span class="reading-detail">{{ check.detail }}</span>
-          {% if station.id == "host" %}
-            {% if let Some(value) = check.value %}
-              {% if check.name != "Temperature" %}
-                <span class="meter" aria-hidden="true">
-                  <span class="meter-fill" style="width: {{ "{:.1}"|format(value) }}%"></span>
-                </span>
-              {% endif %}
-            {% endif %}
-          {% endif %}
-        </li>
-      {% endfor %}
-    </ul>
+    <div class="panel">
+      <ul class="wins">
+        {% for check in station.section.checks %}
+          <li class="win" data-status="{{ check.status.as_str() }}">
+            <span class="win-name">{{ check.name }}</span>
+            <span class="win-detail">{{ check.detail }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
   {% endif %}
-</article>
+</section>

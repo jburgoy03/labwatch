@@ -203,6 +203,7 @@ async fn serve(config: &Config) -> Result<()> {
         .route("/events", get(dashboard::events))
         .route("/incidents", get(timeline::incidents_page))
         .route("/static/app.css", get(dashboard::stylesheet))
+        .route("/favicon.svg", get(dashboard::favicon))
         .route("/api/status", get(api_status))
         .route("/api/history", get(api_history))
         .route("/api/events", get(api_events))

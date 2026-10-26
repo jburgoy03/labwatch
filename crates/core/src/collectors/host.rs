@@ -24,6 +24,25 @@ const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 /// `collect`, so the CPU reading has two samples far enough apart.
 pub const CPU_WARMUP: Duration = sysinfo::MINIMUM_CPU_UPDATE_INTERVAL;
 
+/// The warning and critical thresholds behind a host check, in the same
+/// units as its value, so the dashboard can draw them on the meter.
+/// Disk checks are named after their mount ("Disk /mnt/media").
+pub fn thresholds(check_name: &str) -> Option<(f64, f64)> {
+    match check_name {
+        "CPU" => Some((CPU_WARN, CPU_CRIT)),
+        "Memory" => Some((MEM_WARN, MEM_CRIT)),
+        "Temperature" => Some((TEMP_WARN, TEMP_CRIT)),
+        name if name.starts_with("Disk ") => Some((DISK_WARN, DISK_CRIT)),
+        _ => None,
+    }
+}
+
+/// Seconds since the machine booted. Inside a container this is still the
+/// host's uptime: /proc/uptime isn't namespaced.
+pub fn uptime_secs() -> u64 {
+    System::uptime()
+}
+
 /// This machine's network name, e.g. "jaredburgoyne". Falls back to
 /// "this machine" if the OS won't say.
 pub fn host_name() -> String {

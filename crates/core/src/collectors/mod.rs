@@ -6,7 +6,7 @@ mod services;
 mod vpn;
 
 pub use docker::DockerCollector;
-pub use host::{CPU_WARMUP, HostCollector, host_name};
+pub use host::{CPU_WARMUP, HostCollector, host_name, thresholds, uptime_secs};
 pub use services::ServiceCollector;
 pub use vpn::VpnCollector;
 

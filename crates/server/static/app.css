@@ -1,23 +1,34 @@
-/* Labwatch: a base-station panel for the house.
-   The status lights are the only saturated colour on the page. */
+/* Labwatch: an annunciator panel for the house.
+   Machine-grey enclosure, engraved legends. Windows stay dark while
+   things are fine and light up amber or red when they aren't, so the
+   only colour on a quiet day is the green master lamp. */
 
 :root {
-  --night: #0f1c2b;
-  --panel: #142335;
-  --ink: #e6edf2;
-  --dim: #8ca0b3;
-  --track: #22354a;
+  --enclosure: #CDD1CB;
+  --recess: #B5BAB3;
+  --window: #E3E5DE;
+  --ink: #22262A;
+  --ink-soft: #3A4046;
+  --dim: #4E555B;
+  --tick: rgba(34, 38, 42, 0.28);
 
-  --ok: #5bc48a;
-  --warning: #e8b04b;
-  --critical: #ef6461;
-  --unknown: #7d8b99;
+  --ok: #3DBE6E;
+  --warning: #FFB627;
+  --critical: #E5482F;
+  --unknown: #8A9096;
 
-  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
-  --text: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  /* Darker shades for text on the grey: the lamp colours fail contrast there. */
+  --warning-text: #7A4F00;
+  --critical-text: #A8261A;
 
-  --edge: clamp(1rem, 2.5vw, 2.5rem);
-  --gap: clamp(0.75rem, 1.2vw, 1.25rem);
+  --paper: #E9EFE2;
+  --paper-grid: rgba(80, 120, 80, 0.2);
+  --chart-ink: #8C1C3C;
+
+  --display: "Big Shoulders Display", "Arial Narrow", sans-serif;
+  --text: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+
+  --edge: clamp(1rem, 3.4vw, 3.25rem);
 }
 
 * { box-sizing: border-box; }
@@ -25,381 +36,536 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--night);
+  background: var(--enclosure);
   color: var(--ink);
   font: 400 1rem/1.5 var(--text);
   font-variant-numeric: tabular-nums;
 }
 
-a { color: inherit; text-decoration: none; }
-a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 4px; }
+p { margin: 0; }
+
+a { color: var(--ink); text-underline-offset: 3px; }
+a:hover { color: #000; }
+a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 3px; }
+
+h1, h2 { margin: 0; font-family: var(--display); }
+
+h2 {
+  font-weight: 700;
+  font-size: 1.4rem;
+  line-height: 1.1;
+}
 
 .board {
   min-height: 100vh;
-  padding: var(--edge);
+  padding: clamp(1.25rem, 3.4vw, 3rem) var(--edge) 2rem;
   display: flex;
   flex-direction: column;
-  gap: var(--gap);
+  gap: 2.25rem;
 }
 
-/* Status colour comes from the nearest [data-status]. */
-[data-status="ok"]       { --signal: var(--ok); }
-[data-status="warning"]  { --signal: var(--warning); }
-[data-status="critical"] { --signal: var(--critical); }
-[data-status="unknown"]  { --signal: var(--unknown); }
-
-.light {
-  display: inline-block;
-  flex: none;
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  background: var(--signal);
-}
-
-/* ---- Base status bar: the one loud thing on the page ---- */
+/* ---- Header: the master lamp is the one loud thing on the page ---- */
 
 .base {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  padding: 0.5rem 0 1.25rem;
+  gap: 1.75rem;
+  flex-wrap: wrap;
 }
 
-.beacon {
+.lamp {
   flex: none;
-  width: 3rem;
-  height: 3rem;
+  width: 6.5rem;
+  height: 6.5rem;
+  padding: 0.625rem;
   border-radius: 50%;
-  background: var(--signal);
-  box-shadow: 0 0 0 10px color-mix(in srgb, var(--signal) 15%, transparent);
+  background: var(--recess);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.25), 0 1px 0 #E4E7E1;
 }
 
-.base[data-status="critical"] .beacon { animation: beacon 1.6s ease-in-out infinite; }
-
-@keyframes beacon {
-  50% { box-shadow: 0 0 0 20px color-mix(in srgb, var(--signal) 5%, transparent); }
+.lamp-glass {
+  --lamp: var(--unknown);
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--lamp);
+  box-shadow:
+    inset 0 -6px 10px rgba(0, 0, 0, 0.18),
+    inset 0 6px 10px rgba(255, 255, 255, 0.45);
 }
 
-.base-text { min-width: 0; }
+.base[data-status="ok"] .lamp-glass {
+  --lamp: var(--ok);
+  box-shadow:
+    inset 0 -6px 10px rgba(0, 0, 0, 0.18),
+    inset 0 6px 10px rgba(255, 255, 255, 0.45),
+    0 0 18px rgba(61, 190, 110, 0.55);
+}
 
-.base-text p { margin: 0; }
+.base[data-status="warning"] .lamp-glass {
+  --lamp: var(--warning);
+  box-shadow:
+    inset 0 -6px 10px rgba(0, 0, 0, 0.15),
+    inset 0 6px 10px rgba(255, 255, 255, 0.45),
+    0 0 24px rgba(255, 182, 39, 0.65);
+}
 
-.base-name {
-  color: var(--dim);
-  font-size: 0.9rem;
+.base[data-status="critical"] .lamp-glass {
+  --lamp: var(--critical);
+  box-shadow:
+    inset 0 -6px 10px rgba(0, 0, 0, 0.2),
+    inset 0 6px 10px rgba(255, 255, 255, 0.4),
+    0 0 28px rgba(229, 72, 47, 0.75);
+  animation: alarm 1.4s ease-in-out infinite;
+}
+
+@keyframes alarm {
+  50% { filter: brightness(0.82); }
+}
+
+.base-text {
+  flex: 1 1 26rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .base-headline {
-  margin: 0.1rem 0 0;
-  font: 600 clamp(1.9rem, 3.4vw, 3.25rem)/1.05 var(--display);
-  letter-spacing: 0.01em;
-}
-
-.base-text .base-detail {
-  margin-top: 0.35rem;
-  color: var(--dim);
-}
-
-.base-stations {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.5rem 1.5rem;
-  margin: 0 0 0 auto;
-  padding: 0;
-  list-style: none;
-}
-
-.base-stations a {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--dim);
-}
-
-.base-stations a:hover { color: var(--ink); }
-
-/* ---- Stations ---- */
-
-.stations {
-  flex: 1;
-  display: grid;
-  gap: var(--gap);
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-areas:
-    "host services containers containers"
-    "vpn  services containers containers";
-  grid-auto-rows: auto;
-  align-content: start;
-}
-
-.station {
-  padding: 1.25rem 1.5rem 1.4rem;
-  background: var(--panel);
-  border-radius: 8px;
-}
-
-.station[data-collector="host"]       { grid-area: host; }
-.station[data-collector="services"]   { grid-area: services; }
-.station[data-collector="containers"] { grid-area: containers; }
-.station[data-collector="vpn"]        { grid-area: vpn; }
-
-.station-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.9rem;
-}
-
-.station-head h2 {
-  margin: 0;
-  font: 600 1.15rem/1.2 var(--display);
-}
-
-.station-waiting {
-  margin: 0;
-  color: var(--dim);
-}
-
-.readings {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.reading {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 0.75rem;
-  padding: 0.4rem 0;
-}
-
-.reading-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.reading-detail {
-  color: var(--dim);
-  font-size: 0.9rem;
-  text-align: right;
-}
-
-/* Problems get their detail in full colour so they read at a glance. */
-.reading[data-status="warning"] .reading-detail,
-.reading[data-status="critical"] .reading-detail { color: var(--signal); }
-
-/* Containers are many and short: two columns. */
-.station[data-collector="containers"] .readings {
-  column-count: 2;
-  column-gap: 2.5rem;
-}
-
-.station[data-collector="containers"] .reading { break-inside: avoid; }
-
-/* ---- Server gauges: a thin bar under each percentage reading ---- */
-
-.station[data-collector="host"] .reading {
-  row-gap: 0.45rem;
-  padding: 0.55rem 0;
-}
-
-.meter {
-  grid-column: 2 / -1;
-  height: 0.3rem;
-  overflow: hidden;
-  background: var(--track);
-  border-radius: 999px;
-}
-
-.meter-fill {
-  display: block;
-  height: 100%;
-  max-width: 100%;
-  background: var(--signal);
-  border-radius: inherit;
-}
-
-/* ---- Feature readout: one big fact, e.g. the VPN exit IP ---- */
-
-.feature p { margin: 0; }
-
-.feature-label {
-  color: var(--dim);
-  font-size: 0.9rem;
-}
-
-.feature .feature-value {
-  margin-top: 0.3rem;
-  font: 600 clamp(1.5rem, 2.4vw, 2.2rem)/1.15 var(--display);
+  font-weight: 800;
+  font-size: clamp(2.75rem, 6vw, 5.25rem);
+  line-height: 0.92;
+  letter-spacing: 0.005em;
   overflow-wrap: anywhere;
 }
 
-.station[data-status="warning"] .feature-value,
-.station[data-status="critical"] .feature-value { color: var(--signal); }
-
-.feature .feature-caption {
-  margin-top: 0.3rem;
-  color: var(--dim);
+.base-detail {
+  max-width: 60ch;
+  font-size: 1.125rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
 }
 
-.board-foot {
+.base-meta {
+  margin-left: auto;
+  text-align: right;
   color: var(--dim);
-  font-size: 0.85rem;
+  font-size: 0.95rem;
 }
 
-/* ---- Incident strip: the last 24 hours under the banner ---- */
+.base-host {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* ---- Chart-recorder paper for the last 24 hours ---- */
 
 .timeline {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
-  padding-bottom: 0.5rem;
 }
 
 .timeline-head {
   display: flex;
-  align-items: baseline;
   justify-content: space-between;
+  align-items: baseline;
   gap: 1rem;
 }
 
 .timeline-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.timeline[data-status="warning"] .timeline-summary { color: var(--warning-text); }
+.timeline[data-status="critical"] .timeline-summary { color: var(--critical-text); }
+
+.paper {
+  position: relative;
+  height: 6.5rem;
+  border-radius: 4px;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(90deg, var(--paper-grid) 1px, transparent 1px),
+    linear-gradient(0deg, var(--paper-grid) 1px, transparent 1px);
+  background-size: calc(100% / 24) 100%, 100% 26px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+/* The pen rests on the baseline; each incident lifts it into a pulse. */
+.trace {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  height: 2px;
+  background: var(--chart-ink);
+}
+
+.pulse {
+  position: absolute;
+  bottom: 14px;
+  height: 38px;
+  min-width: 5px;
+  border: 2px solid var(--chart-ink);
+  border-bottom: 0;
+  cursor: help;
+}
+
+.pulse[data-status="critical"] { height: 62px; }
+
+/* Still going: the pen hasn't come back down yet. Pinned to the right
+   edge, so even a minute-old incident shows its rise. */
+.pulse.is-open { border-right: 0; min-width: 0; }
+
+.pulse-note {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--chart-ink);
+}
+
+.pulse-note.is-end { left: auto; right: 6px; }
+
+.hours {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
   color: var(--dim);
 }
 
-/* A quiet day stays quiet; a bad one names itself in colour. */
-.timeline[data-status="warning"] .timeline-summary,
-.timeline[data-status="critical"] .timeline-summary { color: var(--signal); }
+/* ---- Two columns: meters and readout beside the annunciator ---- */
 
-.timeline-link {
-  flex: none;
+.layout {
+  display: grid;
+  grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.layout-side,
+.layout-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  min-width: 0;
+}
+
+.station {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.station-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.station-count {
   color: var(--dim);
   font-size: 0.9rem;
 }
 
-.timeline-link:hover { color: var(--ink); }
+.station[data-status="warning"] .station-count { color: var(--warning-text); }
+.station[data-status="critical"] .station-count { color: var(--critical-text); }
 
-.timeline-track {
-  position: relative;
-  height: 0.6rem;
-  background: var(--track);
-  border-radius: 999px;
+.station-waiting { color: var(--dim); }
+
+/* ---- Annunciator windows ---- */
+
+.panel {
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--recess);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.22), 0 1px 0 #E4E7E1;
 }
 
-.timeline-mark {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  /* Short incidents would be invisible at their true width. */
-  min-width: 4px;
-  background: var(--signal);
-  border-radius: 999px;
-  opacity: 0.9;
-  cursor: help;
+.wins {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.timeline-mark:hover { opacity: 1; box-shadow: 0 0 0 2px var(--night), 0 0 0 4px var(--signal); }
-
-.timeline-mark.is-open { animation: still-open 1.6s ease-in-out infinite; }
-
-@keyframes still-open {
-  50% { opacity: 0.45; }
+.win {
+  min-height: 4.75rem;
+  padding: 0.75rem 0.875rem 0.7rem;
+  border-radius: 5px;
+  background: var(--window);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.375rem;
+  box-shadow: inset 0 1px 0 #F4F5F0, inset 0 -2px 0 #CFD2CA;
 }
 
-.timeline-scale {
+.win-name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.45rem;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.win-detail {
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  color: var(--dim);
+}
+
+.win[data-status="unknown"] .win-detail { font-style: italic; }
+
+.win[data-status="warning"] {
+  background: var(--warning);
+  box-shadow: inset 0 1px 0 #FFD27A, 0 0 0 1px #E59A0A, 0 0 22px rgba(255, 182, 39, 0.55);
+}
+
+.win[data-status="warning"] .win-detail { color: #4A3000; }
+
+.win[data-status="critical"] {
+  background: var(--critical);
+  color: #FFFFFF;
+  box-shadow: inset 0 1px 0 #F27A66, 0 0 0 1px #B92F19, 0 0 26px rgba(229, 72, 47, 0.6);
+}
+
+.win[data-status="critical"] .win-detail { color: #FFFFFF; }
+
+/* ---- Panel meters, with their danger zones engraved on the scale ---- */
+
+.meters {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.meter-row {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.meter-name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.375rem;
+  line-height: 1;
+}
+
+.meter-value {
+  font-size: 0.875rem;
   color: var(--dim);
-  font-size: 0.75rem;
+  text-align: right;
+}
+
+.meter[data-status="warning"] .meter-value { color: var(--warning-text); font-weight: 700; }
+.meter[data-status="critical"] .meter-value { color: var(--critical-text); font-weight: 700; }
+
+.scale {
+  position: relative;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--window);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.scale > span { position: absolute; top: 0; bottom: 0; }
+
+.zone-warn { background: #F6D98F; }
+.zone-crit { right: 0; background: #F0A496; }
+
+.ticks {
+  left: 0;
+  right: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(10% - 1px),
+    var(--tick) calc(10% - 1px),
+    var(--tick) 10%
+  );
+}
+
+.scale > .fill {
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  border-radius: 2px;
+  background: rgba(34, 38, 42, 0.55);
+}
+
+.scale > .needle {
+  top: 2px;
+  bottom: 2px;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+/* ---- VPN readout: a backlit display set into the panel ---- */
+
+.readout {
+  padding: 1.125rem 1.25rem;
+  border-radius: 8px;
+  background: #2B3035;
+  color: #CFE8C9;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.readout-label {
+  margin-bottom: 0.625rem;
+  font-size: 0.875rem;
+  color: #9DB8A0;
+}
+
+.readout-value {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 2.5rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: #B9F5AE;
+  text-shadow: 0 0 12px rgba(185, 245, 174, 0.35);
+  overflow-wrap: anywhere;
+}
+
+.readout-caption {
+  margin-top: 0.625rem;
+  font-size: 0.95rem;
+}
+
+.station-readout[data-status="warning"] .readout-value,
+.station-readout[data-status="warning"] .readout-label { color: #FFD27A; text-shadow: none; }
+
+.station-readout[data-status="critical"] .readout-value,
+.station-readout[data-status="critical"] .readout-label { color: #FF9B88; text-shadow: none; }
+
+.board-foot {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--dim);
+  font-size: 0.875rem;
 }
 
 /* ---- Incident log page ---- */
 
+.log-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .log-head h1 {
-  margin: 0.4rem 0 0;
-  font: 600 clamp(1.9rem, 3.4vw, 3.25rem)/1.05 var(--display);
+  font-weight: 800;
+  font-size: clamp(2.75rem, 6vw, 5.25rem);
+  line-height: 0.92;
 }
 
-.log-back {
-  color: var(--dim);
-  font-size: 0.9rem;
-}
-
-.log-back:hover { color: var(--ink); }
+.log-back { font-size: 0.95rem; }
 
 .log-sub {
-  margin: 0.35rem 0 0;
-  color: var(--dim);
+  font-size: 1.125rem;
+  color: var(--ink-soft);
 }
 
-.log-sub strong { color: var(--critical); font-weight: 500; }
-
-.log-empty {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 1rem 0;
-  color: var(--dim);
-}
+.log-empty { color: var(--ink-soft); }
 
 .log {
   margin: 0;
   padding: 0;
   list-style: none;
-  background: var(--panel);
-  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .log-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 9rem 12rem;
+  grid-template-columns: auto minmax(0, 1fr) 9rem 13rem;
   align-items: center;
   column-gap: 1.25rem;
-  padding: 0.9rem 1.5rem;
+  padding: 0.875rem 1.25rem;
+  border-radius: 5px;
+  background: var(--window);
+  box-shadow: inset 0 1px 0 #F4F5F0, inset 0 -2px 0 #CFD2CA;
 }
 
-.log-row + .log-row { border-top: 1px solid var(--track); }
+/* Small lamp per incident: its worst status, even after it's over. */
+.log-lamp {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  background: var(--unknown);
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.2);
+}
 
-.log-row p { margin: 0; }
+.log-row[data-status="warning"] .log-lamp { background: var(--warning); }
+.log-row[data-status="critical"] .log-lamp { background: var(--critical); }
 
-.log-check { font-weight: 500; }
+/* Still going: the whole window is lit, like on the board. */
+.log-row.is-open[data-status="warning"] { background: var(--warning); }
+.log-row.is-open[data-status="critical"] { background: var(--critical); color: #FFFFFF; }
+.log-row.is-open .log-lamp { background: #FFFFFF; }
+
+.log-check {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.375rem;
+  line-height: 1.1;
+}
 
 .log-collector {
   margin-left: 0.4rem;
-  color: var(--dim);
-  font-size: 0.85rem;
+  font-family: var(--text);
   font-weight: 400;
+  font-size: 0.85rem;
+  color: var(--dim);
 }
 
 .log-detail {
-  color: var(--dim);
   font-size: 0.9rem;
+  color: var(--dim);
   overflow-wrap: anywhere;
 }
 
-.log-row.is-open .log-detail { color: var(--signal); }
-
-.log-when [data-ts] { cursor: help; }
-
 .log-when,
 .log-duration {
-  color: var(--dim);
-  font-size: 0.9rem;
   text-align: right;
+  font-size: 0.9rem;
+  color: var(--dim);
 }
+
+.log-row.is-open[data-status="critical"] :is(.log-collector, .log-detail, .log-when, .log-duration) { color: #FFFFFF; }
+.log-row.is-open[data-status="warning"] :is(.log-collector, .log-detail, .log-when, .log-duration) { color: #4A3000; }
+
+.log-when [data-ts] { cursor: help; }
 
 .badge {
   display: inline-block;
   margin-left: 0.4rem;
   padding: 0.05rem 0.5rem;
-  border: 1px solid var(--track);
+  border: 1px solid currentColor;
   border-radius: 999px;
   font-size: 0.75rem;
   cursor: help;
@@ -407,32 +573,38 @@ a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-rad
 
 .badge-open {
   margin: 0 0.4rem 0 0;
-  border-color: var(--signal);
-  color: var(--signal);
   cursor: default;
 }
 
-/* ---- Medium screens: two columns ---- */
+/* ---- Medium screens: one column, header meta under the headline ---- */
 
-@media (max-width: 90rem) {
-  .stations {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "host       services"
-      "vpn        services"
-      "containers containers";
+@media (max-width: 60rem) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+
+  .base-meta {
+    width: 100%;
+    margin-left: 0;
+    text-align: left;
   }
 }
 
-/* ---- Small screens: one column, banner stacks ---- */
+/* ---- Phones ---- */
 
-@media (max-width: 48rem) {
-  .base { flex-wrap: wrap; }
+@media (max-width: 36rem) {
+  .board { gap: 1.75rem; }
+
+  .lamp { width: 4.5rem; height: 4.5rem; padding: 0.45rem; }
+
+  .wins { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .win { min-height: 4.25rem; padding: 0.625rem 0.7rem; }
+  .win-name { font-size: 1.25rem; }
+
+  .readout-value { font-size: 2rem; }
 
   .log-row {
     grid-template-columns: auto minmax(0, 1fr);
     row-gap: 0.25rem;
-    padding: 0.9rem 1rem;
+    padding: 0.875rem 1rem;
   }
 
   .log-when,
@@ -440,24 +612,8 @@ a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-rad
     grid-column: 2;
     text-align: left;
   }
-
-  .base-stations {
-    justify-content: flex-start;
-    margin-left: 0;
-    width: 100%;
-  }
-
-  .stations {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: none;
-  }
-
-  .station[data-collector] { grid-area: auto; }
-
-  .station[data-collector="containers"] .readings { column-count: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .base[data-status="critical"] .beacon { animation: none; }
-  .timeline-mark.is-open { animation: none; }
+  .base[data-status="critical"] .lamp-glass { animation: none; }
 }

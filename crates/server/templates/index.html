@@ -1,16 +1,30 @@
 {% extends "base.html" %}
 
+{% block title %}{{ tab_title }}{% endblock %}
+
+{% block icon %}<link rel="icon" id="favicon" type="image/svg+xml" href="/favicon.svg?status={{ status.as_str() }}">{% endblock %}
+
 {% block content %}
 <main class="board" hx-ext="sse" sse-connect="/events">
   {{ banner|safe }}
   {{ timeline|safe }}
 
-  <div class="stations">
-    {% for station in stations %}
-      {% include "station.html" %}
-    {% endfor %}
+  <div class="layout">
+    <div class="layout-side">
+      {% for station in side %}
+        {% include "station.html" %}
+      {% endfor %}
+    </div>
+    <div class="layout-main">
+      {% for station in main %}
+        {% include "station.html" %}
+      {% endfor %}
+    </div>
   </div>
 
-  <footer class="board-foot">Labwatch {{ version }}</footer>
+  <footer class="board-foot">
+    <a href="/incidents">Open the incident log</a>
+    <span>Labwatch {{ version }}</span>
+  </footer>
 </main>
 {% endblock %}

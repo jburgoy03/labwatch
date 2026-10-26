@@ -66,6 +66,10 @@ fn status_word(status: Status) -> &'static str {
 
 /// One incident drawn on the strip, positioned as percentages of the day.
 pub struct Mark {
+    pub check: String,
+    /// Handwritten-style label above an ongoing incident. Neighbours that
+    /// started close together share one label, set on the last of them.
+    pub note: Option<String>,
     pub left: f64,
     pub width: f64,
     pub status: Status,
@@ -103,6 +107,8 @@ impl TimelineTemplate {
                 let start = incident.started_at.max(window_start);
                 let end = incident.ended_at.unwrap_or(now).min(now);
                 Mark {
+                    check: incident.check.clone(),
+                    note: None,
                     left: percent(start - window_start, DAY),
                     width: percent(end - start, DAY),
                     status: incident.worst_status,
@@ -111,6 +117,7 @@ impl TimelineTemplate {
                 }
             })
             .collect();
+        let marks = label_open_marks(marks);
 
         let worst = recent
             .iter()
@@ -124,6 +131,41 @@ impl TimelineTemplate {
             marks,
         }
     }
+}
+
+/// Ongoing incidents that start within this share of the day of each
+/// other share one label, so their names don't print on top of each other.
+const NOTE_GROUP_PERCENT: f64 = 6.0;
+
+/// Gives each cluster of ongoing incidents one label listing their checks,
+/// e.g. "Jellyfin, Sonarr". Names that differ only in case (the Jellyfin
+/// service and its jellyfin container) are listed once.
+fn label_open_marks(mut marks: Vec<Mark>) -> Vec<Mark> {
+    // Indices of the open marks, left to right.
+    let mut open: Vec<usize> = (0..marks.len()).filter(|&i| marks[i].open).collect();
+    open.sort_by(|&a, &b| marks[a].left.total_cmp(&marks[b].left));
+
+    // `chunk_by` splits a slice wherever the closure returns false: here,
+    // wherever the gap to the next mark is wider than the grouping distance.
+    let groups: Vec<Vec<usize>> = open
+        .chunk_by(|&a, &b| marks[b].left - marks[a].left <= NOTE_GROUP_PERCENT)
+        .map(<[usize]>::to_vec)
+        .collect();
+
+    for group in groups {
+        let mut names: Vec<String> = Vec::new();
+        for &i in &group {
+            let name = &marks[i].check;
+            if !names.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                names.push(name.clone());
+            }
+        }
+        // A group is never empty, so `last` always finds a mark.
+        if let Some(&last) = group.last() {
+            marks[last].note = Some(names.join(", "));
+        }
+    }
+    marks
 }
 
 fn percent(part: i64, whole: i64) -> f64 {
@@ -158,18 +200,19 @@ fn summary(recent: &[&Incident], now: i64) -> String {
     let longest = recent.iter().map(|i| i.duration_secs(now)).max();
 
     let count = match recent.len() {
-        0 => return "No incidents in the last 24 h".into(),
+        0 => return "Nothing has gone wrong".into(),
         1 => "1 incident".to_string(),
         n => format!("{n} incidents"),
     };
-    // `longest` is Some whenever `recent` isn't empty, which the match
-    // above already guaranteed. `unwrap_or_default` keeps it panic-free.
-    let longest = human_duration(longest.unwrap_or_default());
 
-    let base = format!("{count} in the last 24 h, longest {longest}");
     match open {
-        0 => base,
-        n => format!("{n} ongoing · {base}"),
+        // `longest` is Some whenever `recent` isn't empty, which the match
+        // above already guaranteed. `unwrap_or_default` keeps it panic-free.
+        0 => format!(
+            "{count}, longest {}",
+            human_duration(longest.unwrap_or_default())
+        ),
+        n => format!("{count}, {n} still going"),
     }
 }
 
@@ -286,7 +329,7 @@ mod tests {
     #[test]
     fn empty_day_is_all_clear() {
         let strip = TimelineTemplate::new(&[], NOW);
-        assert_eq!(strip.summary, "No incidents in the last 24 h");
+        assert_eq!(strip.summary, "Nothing has gone wrong");
         assert_eq!(strip.status, Status::Ok);
         assert!(strip.marks.is_empty());
     }
@@ -298,10 +341,7 @@ mod tests {
             incident("Radarr", 2 * HOUR, Some(3 * MINUTE), Status::Critical),
         ];
         let strip = TimelineTemplate::new(&incidents, NOW);
-        assert_eq!(
-            strip.summary,
-            "2 incidents in the last 24 h, longest 14 min"
-        );
+        assert_eq!(strip.summary, "2 incidents, longest 14 min");
         assert_eq!(strip.status, Status::Critical);
     }
 
@@ -309,10 +349,7 @@ mod tests {
     fn ongoing_incidents_lead_the_summary() {
         let incidents = [incident("Jellyfin", 20 * MINUTE, None, Status::Critical)];
         let strip = TimelineTemplate::new(&incidents, NOW);
-        assert_eq!(
-            strip.summary,
-            "1 ongoing · 1 incident in the last 24 h, longest 20 min"
-        );
+        assert_eq!(strip.summary, "1 incident, 1 still going");
         assert!(strip.marks[0].open);
         // An open incident runs to the right edge.
         let mark = &strip.marks[0];
@@ -351,6 +388,22 @@ mod tests {
     fn incidents_that_ended_before_the_window_are_left_out() {
         let incidents = [incident("Sonarr", 3 * DAY, Some(HOUR), Status::Warning)];
         assert!(TimelineTemplate::new(&incidents, NOW).marks.is_empty());
+    }
+
+    #[test]
+    fn ongoing_neighbours_share_one_label() {
+        let incidents = [
+            incident("Jellyfin", 10 * MINUTE, None, Status::Critical),
+            incident("jellyfin", 9 * MINUTE, None, Status::Critical),
+            incident("Sonarr", 8 * MINUTE, None, Status::Warning),
+            incident("Radarr", 12 * HOUR, None, Status::Warning),
+            incident("old", 5 * HOUR, Some(MINUTE), Status::Warning),
+        ];
+        let marks = TimelineTemplate::new(&incidents, NOW).marks;
+        let notes: Vec<&str> = marks.iter().filter_map(|m| m.note.as_deref()).collect();
+        // One label for the cluster at the right edge, one for Radarr on its
+        // own, none for the incident that's over.
+        assert_eq!(notes, vec!["Jellyfin, Sonarr", "Radarr"]);
     }
 
     #[test]
