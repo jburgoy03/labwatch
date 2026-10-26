@@ -1,0 +1,22 @@
+<section class="timeline" id="timeline" data-status="{{ status.as_str() }}"
+         sse-swap="timeline" hx-swap="outerHTML" aria-label="Incidents in the last 24 hours">
+  <div class="timeline-head">
+    <p class="timeline-summary">
+      {% if marks.is_empty() %}<span class="light"></span>{% endif %}{{ summary }}
+    </p>
+    <a class="timeline-link" href="/incidents">Incident log</a>
+  </div>
+
+  <div class="timeline-track">
+    {% for mark in marks %}
+      <span class="timeline-mark{% if mark.open %} is-open{% endif %}"
+            data-status="{{ mark.status.as_str() }}"
+            style="left: {{ "{:.2}"|format(mark.left) }}%; width: {{ "{:.2}"|format(mark.width) }}%"
+            title="{{ mark.label }}"></span>
+    {% endfor %}
+  </div>
+
+  <div class="timeline-scale" aria-hidden="true">
+    <span>24 h ago</span><span>18 h</span><span>12 h</span><span>6 h</span><span>now</span>
+  </div>
+</section>

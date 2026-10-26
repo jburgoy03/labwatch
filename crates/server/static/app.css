@@ -251,6 +251,167 @@ a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-rad
   font-size: 0.85rem;
 }
 
+/* ---- Incident strip: the last 24 hours under the banner ---- */
+
+.timeline {
+  display: grid;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.timeline-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--dim);
+}
+
+/* A quiet day stays quiet; a bad one names itself in colour. */
+.timeline[data-status="warning"] .timeline-summary,
+.timeline[data-status="critical"] .timeline-summary { color: var(--signal); }
+
+.timeline-link {
+  flex: none;
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+.timeline-link:hover { color: var(--ink); }
+
+.timeline-track {
+  position: relative;
+  height: 0.6rem;
+  background: var(--track);
+  border-radius: 999px;
+}
+
+.timeline-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Short incidents would be invisible at their true width. */
+  min-width: 4px;
+  background: var(--signal);
+  border-radius: 999px;
+  opacity: 0.9;
+  cursor: help;
+}
+
+.timeline-mark:hover { opacity: 1; box-shadow: 0 0 0 2px var(--night), 0 0 0 4px var(--signal); }
+
+.timeline-mark.is-open { animation: still-open 1.6s ease-in-out infinite; }
+
+@keyframes still-open {
+  50% { opacity: 0.45; }
+}
+
+.timeline-scale {
+  display: flex;
+  justify-content: space-between;
+  color: var(--dim);
+  font-size: 0.75rem;
+}
+
+/* ---- Incident log page ---- */
+
+.log-head h1 {
+  margin: 0.4rem 0 0;
+  font: 600 clamp(1.9rem, 3.4vw, 3.25rem)/1.05 var(--display);
+}
+
+.log-back {
+  color: var(--dim);
+  font-size: 0.9rem;
+}
+
+.log-back:hover { color: var(--ink); }
+
+.log-sub {
+  margin: 0.35rem 0 0;
+  color: var(--dim);
+}
+
+.log-sub strong { color: var(--critical); font-weight: 500; }
+
+.log-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1rem 0;
+  color: var(--dim);
+}
+
+.log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 9rem 12rem;
+  align-items: center;
+  column-gap: 1.25rem;
+  padding: 0.9rem 1.5rem;
+}
+
+.log-row + .log-row { border-top: 1px solid var(--track); }
+
+.log-row p { margin: 0; }
+
+.log-check { font-weight: 500; }
+
+.log-collector {
+  margin-left: 0.4rem;
+  color: var(--dim);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.log-detail {
+  color: var(--dim);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.log-row.is-open .log-detail { color: var(--signal); }
+
+.log-when [data-ts] { cursor: help; }
+
+.log-when,
+.log-duration {
+  color: var(--dim);
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--track);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  cursor: help;
+}
+
+.badge-open {
+  margin: 0 0.4rem 0 0;
+  border-color: var(--signal);
+  color: var(--signal);
+  cursor: default;
+}
+
 /* ---- Medium screens: two columns ---- */
 
 @media (max-width: 90rem) {
@@ -267,6 +428,18 @@ a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-rad
 
 @media (max-width: 48rem) {
   .base { flex-wrap: wrap; }
+
+  .log-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 0.25rem;
+    padding: 0.9rem 1rem;
+  }
+
+  .log-when,
+  .log-duration {
+    grid-column: 2;
+    text-align: left;
+  }
 
   .base-stations {
     justify-content: flex-start;
@@ -286,4 +459,5 @@ a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-rad
 
 @media (prefers-reduced-motion: reduce) {
   .base[data-status="critical"] .beacon { animation: none; }
+  .timeline-mark.is-open { animation: none; }
 }

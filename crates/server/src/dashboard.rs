@@ -15,10 +15,11 @@ use axum::{
 use futures_util::{Stream, StreamExt, stream};
 use labwatch_core::{
     collectors::host_name,
+    history::unix_now,
     status::{Section, Status},
 };
 
-use crate::{AppState, section_stream};
+use crate::{AppState, section_stream, timeline};
 
 /// One station on the board: a section plus the name people see.
 struct Station {
@@ -120,6 +121,8 @@ struct StationTemplate<'a> {
 struct IndexTemplate {
     version: &'static str,
     banner: String,
+    /// The 24-hour incident strip, or empty if it couldn't be built.
+    timeline: String,
     stations: Vec<Station>,
 }
 
@@ -174,7 +177,7 @@ fn summarize(sections: &[Section]) -> (Status, String, String) {
     }
 }
 
-fn render(template: &impl Template) -> Response {
+pub(crate) fn render(template: &impl Template) -> Response {
     match template.render() {
         Ok(html) => Html(html).into_response(),
         Err(err) => (
@@ -192,43 +195,68 @@ pub async fn index(State(state): State<AppState>) -> Response {
         Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response(),
     };
 
+    let timeline = timeline::render_strip(&state.history, unix_now())
+        .await
+        .unwrap_or_default();
+
     render(&IndexTemplate {
         version: labwatch_core::version(),
         banner,
+        timeline,
         stations: sections.into_iter().map(Station::from).collect(),
     })
 }
 
-/// Live updates for htmx. Each published section becomes two events:
-/// the station's new card (named after the collector, e.g. "host") and a
-/// fresh banner ("summary"). htmx swaps each into the element whose
-/// `sse-swap` attribute matches the event name.
+/// Live updates for htmx. Each published section becomes three events:
+/// the station's new card (named after the collector, e.g. "host"), a
+/// fresh banner ("summary") and the incident strip ("timeline"). htmx swaps
+/// each into the element whose `sse-swap` attribute matches the event name.
 pub async fn events(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let hub = state.hub.clone();
+    let history = state.history.clone();
 
-    let events = section_stream(state).flat_map(move |section| {
-        let id = section.collector.clone();
-        let station = Station::from(section);
-        let card = StationTemplate { station: &station }.render();
-        let banner = BannerTemplate::new(hub.sections()).render();
+    // `then` runs an async step per item, like `Select` with an `await`
+    // inside. The timeline needs one: it reads incidents from SQLite.
+    let events = section_stream(state)
+        .then(move |section| {
+            // Each call gets its own handles, because the async block below
+            // may outlive this call. Cloning is cheap: both are shared handles.
+            let hub = hub.clone();
+            let history = history.clone();
+            async move {
+                let id = section.collector.clone();
+                let station = Station::from(section);
+                let card = StationTemplate { station: &station }.render();
+                let banner = BannerTemplate::new(hub.sections()).render();
+                let strip = timeline::render_strip(&history, unix_now()).await;
 
-        // Collect whichever renders succeeded into a small stream of events.
-        // SSE data can't contain raw newlines, and HTML doesn't need them.
-        let mut out = Vec::new();
-        if let Ok(html) = card {
-            out.push(Event::default().event(id).data(html.replace('\n', "")));
-        }
-        if let Ok(html) = banner {
-            out.push(
-                Event::default()
-                    .event("summary")
-                    .data(html.replace('\n', "")),
-            );
-        }
-        stream::iter(out.into_iter().map(Ok::<_, Infallible>))
-    });
+                // Collect whichever renders succeeded into a few events.
+                // SSE data can't contain raw newlines, and HTML doesn't need them.
+                let mut out = Vec::new();
+                if let Ok(html) = card {
+                    out.push(Event::default().event(id).data(html.replace('\n', "")));
+                }
+                if let Ok(html) = banner {
+                    out.push(
+                        Event::default()
+                            .event("summary")
+                            .data(html.replace('\n', "")),
+                    );
+                }
+                if let Some(html) = strip {
+                    out.push(
+                        Event::default()
+                            .event("timeline")
+                            .data(html.replace('\n', "")),
+                    );
+                }
+                out
+            }
+        })
+        // Flatten each batch of events into the one outgoing stream.
+        .flat_map(|out| stream::iter(out.into_iter().map(Ok::<_, Infallible>)));
 
     Sse::new(events).keep_alive(KeepAlive::default())
 }

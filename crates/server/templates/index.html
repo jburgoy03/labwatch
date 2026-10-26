@@ -3,6 +3,7 @@
 {% block content %}
 <main class="board" hx-ext="sse" sse-connect="/events">
   {{ banner|safe }}
+  {{ timeline|safe }}
 
   <div class="stations">
     {% for station in stations %}

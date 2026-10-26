@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Incident log · Labwatch{% endblock %}
+
+{% block content %}
+<main class="board log-page">
+  <header class="log-head">
+    <a class="log-back" href="/">&larr; Home base</a>
+    <h1>Incident log</h1>
+    <p class="log-sub">
+      Last 30 days{% if open > 0 %} · <strong>{{ open }} ongoing</strong>{% endif %}
+    </p>
+  </header>
+
+  {% if rows.is_empty() %}
+    <p class="log-empty" data-status="ok"><span class="light"></span>Nothing has broken in the last 30 days.</p>
+  {% else %}
+    <ol class="log">
+      {% for row in rows %}
+        <li class="log-row{% if row.open %} is-open{% endif %}" data-status="{{ row.status.as_str() }}">
+          <span class="light" role="img" aria-label="{{ row.status }}"></span>
+          <div class="log-what">
+            <p class="log-check">{{ row.check }} <span class="log-collector">{{ row.collector }}</span></p>
+            <p class="log-detail">{{ row.detail }}</p>
+          </div>
+          <p class="log-when">
+            <span data-ts="{{ row.started_at }}">{{ row.started_ago }}</span>
+          </p>
+          <p class="log-duration">
+            {% if row.open %}
+              <span class="badge badge-open">Ongoing</span> {{ row.duration }}
+            {% else %}
+              {{ row.duration }}
+              {% if row.interrupted %}<span class="badge" title="Labwatch restarted while this was open, so the end time is when it stopped watching">Interrupted</span>{% endif %}
+            {% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ol>
+  {% endif %}
+
+  <footer class="board-foot">Labwatch {{ version }}</footer>
+</main>
+
+<script>
+  // Hover a start time to see it in your own timezone.
+  document.querySelectorAll("[data-ts]").forEach(function (el) {
+    el.title = new Date(el.dataset.ts * 1000).toLocaleString();
+  });
+</script>
+{% endblock %}

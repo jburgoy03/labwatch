@@ -1,4 +1,5 @@
 mod dashboard;
+mod timeline;
 
 use std::{
     convert::Infallible,
@@ -200,6 +201,7 @@ async fn serve(config: &Config) -> Result<()> {
     let app = Router::new()
         .route("/", get(dashboard::index))
         .route("/events", get(dashboard::events))
+        .route("/incidents", get(timeline::incidents_page))
         .route("/static/app.css", get(dashboard::stylesheet))
         .route("/api/status", get(api_status))
         .route("/api/history", get(api_history))
