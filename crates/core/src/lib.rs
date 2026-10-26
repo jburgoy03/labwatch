@@ -7,6 +7,7 @@ pub mod hub;
 pub mod scheduler;
 pub mod status;
 pub mod store;
+pub mod transitions;
 
 /// Returns the Labwatch version from Cargo.toml.
 pub fn version() -> &'static str {

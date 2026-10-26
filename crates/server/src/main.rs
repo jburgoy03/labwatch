@@ -1,7 +1,6 @@
 mod dashboard;
 
 use std::{
-    collections::HashMap,
     convert::Infallible,
     path::PathBuf,
     time::{Duration, Instant},
@@ -25,7 +24,8 @@ use labwatch_core::{
     history::{History, Point, Range, unix_now},
     hub::Hub,
     scheduler,
-    status::{Section, Status},
+    status::Section,
+    transitions::Transitions,
 };
 use serde::Deserialize;
 use tokio::sync::broadcast::error::RecvError;
@@ -327,22 +327,20 @@ async fn rollup_every_hour(history: History) {
     }
 }
 
-/// Subscribes to the hub and prints a line whenever a collector's overall
-/// status changes, e.g. `[services] OK -> CRIT`.
+/// Subscribes to the hub and prints a line whenever a check settles on a
+/// new status, e.g. `[services] Jellyfin OK -> CRIT: timed out after 5s`.
 async fn log_changes(hub: Hub) {
     let mut updates = hub.subscribe();
-    let mut last_seen: HashMap<String, Status> = HashMap::new();
+    let mut transitions = Transitions::default();
 
     loop {
         match updates.recv().await {
             Ok(section) => {
-                // `insert` returns the previous value, if there was one.
-                match last_seen.insert(section.collector.clone(), section.status) {
-                    None => println!("[{}] first run: {}", section.collector, section.status),
-                    Some(previous) if previous != section.status => {
-                        println!("[{}] {previous} -> {}", section.collector, section.status);
-                    }
-                    Some(_) => {} // unchanged, stay quiet
+                for change in transitions.observe(&section) {
+                    println!(
+                        "[{}] {} {} -> {}: {}",
+                        change.collector, change.check, change.from, change.to, change.detail
+                    );
                 }
             }
             // We fell behind and the channel dropped old messages. Not fatal:
